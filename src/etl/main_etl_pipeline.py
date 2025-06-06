@@ -82,14 +82,14 @@ def run_full_etl_pipeline():
     try:
         conn_cache = db_utils.get_db_connection()
         cursor_cache = conn_cache.cursor()
-        cursor_cache.execute("SELECT identifier, name, full_name, known_as FROM Players;")
+        cursor_cache.execute("SELECT identifier, name, unique_name FROM Players;")
         for row in cursor_cache.fetchall():
-            identifier, name, full_name, known_as = row
-            if name: player_name_to_identifier_cache[name.strip()] = identifier
-            if full_name and full_name.strip() not in player_name_to_identifier_cache:  # Avoid overwriting with less specific if name was same
-                player_name_to_identifier_cache[full_name.strip()] = identifier
-            if known_as and known_as.strip() not in player_name_to_identifier_cache:
-                player_name_to_identifier_cache[known_as.strip()] = identifier
+            identifier, name, unique_name = row
+            # Build the cache using the available name columns
+            if name:
+                player_name_to_identifier_cache[name.strip()] = identifier
+            if unique_name and unique_name.strip() not in player_name_to_identifier_cache:
+                player_name_to_identifier_cache[unique_name.strip()] = identifier
         logger.info(f"Player name to identifier cache populated with {len(player_name_to_identifier_cache)} entries.")
         cursor_cache.close()
     except Exception as e:
