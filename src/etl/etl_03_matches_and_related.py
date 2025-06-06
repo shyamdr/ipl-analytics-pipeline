@@ -4,34 +4,32 @@ import json
 from datetime import datetime
 from src import config
 from src import db_utils
+import logging
 
+logger = logging.getLogger(__name__)
 
-# These caches will be passed from the main pipeline or loaded here
-# For standalone running, they'd need to be populated first.
-# This script assumes player_identifier_lookup (name -> identifier) is available.
 
 def get_player_identifier(player_name, cursor, player_name_to_identifier_cache):
     """Looks up player identifier by name, first in cache, then DB if not found."""
+    if not player_name:
+        return None
     if player_name in player_name_to_identifier_cache:
         return player_name_to_identifier_cache[player_name]
 
-    # Fallback to DB lookup if name not in cache (should be rare if cache is pre-populated)
-    # print(f"Cache miss for player: {player_name}. Querying DB.")
     cursor.execute("SELECT identifier FROM Players WHERE name = %s OR full_name = %s OR known_as = %s LIMIT 1;",
                    (player_name, player_name, player_name))
     result = cursor.fetchone()
     if result:
-        player_name_to_identifier_cache[player_name] = result[0]  # Cache it
+        player_name_to_identifier_cache[player_name] = result[0]
         return result[0]
     else:
-        # Check if it's an ID already from registry that might be used as a name
         cursor.execute("SELECT identifier FROM Players WHERE identifier = %s LIMIT 1;", (player_name,))
         result_id_check = cursor.fetchone()
         if result_id_check:
             player_name_to_identifier_cache[player_name] = result_id_check[0]
             return result_id_check[0]
 
-        print(f"Warning: Player identifier not found for name: '{player_name}'")
+        logger.warning(f"Player identifier not found for name: '{player_name}'")
         return None
 
 
@@ -41,7 +39,7 @@ def load_matches_and_related(team_id_cache, venue_id_cache, player_name_to_ident
     PlayerOfMatchAwards, and MatchOfficialsAssignment tables.
     """
     conn = None
-    print("Starting population of Matches and related tables...")
+    logger.info("Starting population of Matches and related tables...")
     try:
         conn = db_utils.get_db_connection()
         cursor = conn.cursor()
@@ -50,33 +48,49 @@ def load_matches_and_related(team_id_cache, venue_id_cache, player_name_to_ident
         staged_matches = cursor.fetchall()
 
         for match_file_id, match_json_detail in staged_matches:
-            print(f"Processing match_id: {match_file_id} for Matches table and related...")
+            logger.debug(f"Processing match_id: {match_file_id} for Matches table and related...")
             try:
-                meta = match_json_detail.get('meta', {})
                 info = match_json_detail.get('info', {})
 
-                # --- 1. Matches Table ---
-                teams_in_match = info.get('teams', [])
+                # --- 1. Robustly parse teams and season ---
+
+                # Robustly handle teams list which can be null
+                teams_in_match = info.get('teams')
+                if teams_in_match is None:
+                    teams_in_match = []
+
                 team1_name = teams_in_match[0] if len(teams_in_match) > 0 else None
                 team2_name = teams_in_match[1] if len(teams_in_match) > 1 else None
+
+                # *** FIX for season year format ***
+                season_raw = info.get('season')
+                season_year_to_insert = None
+                if season_raw:
+                    season_str = str(season_raw)
+                    try:
+                        # Take the first four characters, which represent the starting year
+                        season_year_to_insert = int(season_str[:4])
+                    except (ValueError, TypeError):
+                        logger.error(f"Could not parse season '{season_str}' for match {match_file_id}.")
+                        # This will cause the INSERT to fail if season_year column is NOT NULL, which is intended.
+                # *** End of fix ***
 
                 team1_id = team_id_cache.get(team1_name)
                 team2_id = team_id_cache.get(team2_name)
 
                 venue_name_raw = info.get('venue', '').strip()
                 city_raw = info.get('city', '').strip() if info.get('city') else None
-                # Construct key for venue_id_cache (name, city)
                 venue_key = (venue_name_raw, city_raw)
                 venue_id = venue_id_cache.get(venue_key)
 
-                if not venue_id and venue_name_raw:  # Try with just name if city was an issue
+                if not venue_id and venue_name_raw:
                     for (vn, vc), vid in venue_id_cache.items():
                         if vn == venue_name_raw:
                             venue_id = vid
                             break
-                if not venue_id and venue_name_raw:  # Log if still not found
-                    print(
-                        f"Warning: Venue ID not found for '{venue_name_raw}', City '{city_raw}' in match {match_file_id}")
+                if not venue_id and venue_name_raw:
+                    logger.warning(
+                        f"Venue ID not found for '{venue_name_raw}', City '{city_raw}' in match {match_file_id}")
 
                 toss_winner_name = info.get('toss', {}).get('winner')
                 toss_winner_team_id = team_id_cache.get(toss_winner_name) if toss_winner_name else None
@@ -94,7 +108,7 @@ def load_matches_and_related(team_id_cache, venue_id_cache, player_name_to_ident
                     elif 'runs' in outcome_details['by']:
                         outcome_type = 'runs'
                         outcome_margin = outcome_details['by']['runs']
-                elif 'result' in outcome_details:  # For 'tie', 'no result'
+                elif 'result' in outcome_details:
                     outcome_type = outcome_details['result']
 
                 match_date_str = info.get('dates', [None])[0]
@@ -116,20 +130,21 @@ def load_matches_and_related(team_id_cache, venue_id_cache, player_name_to_ident
                         outcome_margin = EXCLUDED.outcome_margin, match_type = EXCLUDED.match_type, 
                         overs_limit = EXCLUDED.overs_limit, balls_per_over = EXCLUDED.balls_per_over;
                 """, (
-                    match_file_id, info.get('season'), match_date_obj, info.get('event', {}).get('name'),
+                    match_file_id,
+                    season_year_to_insert,  # Using the corrected variable here
+                    match_date_obj, info.get('event', {}).get('name'),
                     info.get('event', {}).get('match_number'), venue_id, team1_id, team2_id,
                     toss_winner_team_id, info.get('toss', {}).get('decision'), outcome_winner_team_id,
                     outcome_type, outcome_margin, info.get('match_type'), info.get('overs'),
                     info.get('balls_per_over')
                 ))
 
-                # --- 2. MatchPlayers (Playing XI) ---
                 json_players_info = info.get('players', {})
                 for team_name_in_json, player_name_list in json_players_info.items():
                     current_team_id = team_id_cache.get(team_name_in_json)
                     if not current_team_id:
-                        print(
-                            f"Warning: Team ID not found for team '{team_name_in_json}' in match {match_file_id} for MatchPlayers.")
+                        logger.warning(
+                            f"Team ID not found for team '{team_name_in_json}' in match {match_file_id} for MatchPlayers.")
                         continue
                     for player_name in player_name_list:
                         player_identifier = get_player_identifier(player_name, cursor, player_name_to_identifier_cache)
@@ -139,79 +154,69 @@ def load_matches_and_related(team_id_cache, venue_id_cache, player_name_to_ident
                                 VALUES (%s, %s, %s) ON CONFLICT (match_id, player_identifier) DO NOTHING;
                             """, (match_file_id, player_identifier, current_team_id))
 
-                # --- 3. PlayerOfMatchAwards ---
                 for pom_player_name in info.get('player_of_match', []):
                     player_identifier = get_player_identifier(pom_player_name, cursor, player_name_to_identifier_cache)
                     if player_identifier:
                         cursor.execute("""
                             INSERT INTO PlayerOfMatchAwards (match_id, player_identifier) VALUES (%s, %s)
-                            ON CONFLICT DO NOTHING; -- Define a unique constraint if a player can only win one PoM per match
+                            ON CONFLICT DO NOTHING;
                         """, (match_file_id, player_identifier))
 
-                # --- 4. MatchOfficialsAssignment ---
                 json_officials_info = info.get('officials', {})
                 for role, official_name_or_list in json_officials_info.items():
                     official_names_to_process = []
                     if isinstance(official_name_or_list, list):
                         official_names_to_process.extend(official_name_or_list)
-                    elif isinstance(official_name_or_list, str):  # Should not happen based on schema, but good to check
+                    elif isinstance(official_name_or_list, str):
                         official_names_to_process.append(official_name_or_list)
 
                     for official_name in official_names_to_process:
                         official_identifier = get_player_identifier(official_name, cursor,
-                                                                    player_name_to_identifier_cache)  # Officials are in Players table
+                                                                    player_name_to_identifier_cache)
                         if official_identifier:
                             cursor.execute("""
                                 INSERT INTO MatchOfficialsAssignment (match_id, official_identifier, match_role)
                                 VALUES (%s, %s, %s) ON CONFLICT (match_id, official_identifier, match_role) DO NOTHING;
                             """, (match_file_id, official_identifier, role))
 
-                conn.commit()  # Commit after each match is processed successfully
+                conn.commit()
             except Exception as e_match:
-                print(f"Error processing details for match_id {match_file_id}: {e_match}")
-                conn.rollback()  # Rollback this match's transactions
+                logger.error(f"Error processing details for match_id {match_file_id}: {e_match}", exc_info=True)
+                conn.rollback()
 
-        print("Matches and related tables populated.")
+        logger.info("Matches and related tables population attempt finished.")
 
     except (Exception, psycopg2.Error) as error:
-        print(f"Error in load_matches_and_related: {error}")
+        logger.error(f"Error in load_matches_and_related: {error}", exc_info=True)
         if conn:
             conn.rollback()
     finally:
         if conn:
-            if 'cursor' in locals() and cursor:
+            if 'cursor' in locals() and cursor and not cursor.closed:
                 cursor.close()
             conn.close()
-            print("PostgreSQL connection for Matches load is closed.")
+            logger.info("PostgreSQL connection for Matches load is closed.")
 
 
 if __name__ == "__main__":
-    # This script depends on:
-    # 1. stg_match_data being populated.
-    # 2. Players table being populated by etl_01_people_master.py.
-    # 3. Teams and Venues tables being populated by etl_02_dimensions_from_json.py.
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    logger.info("Simulating dimension cache loading for standalone run...")
 
-    # For standalone running, you'd need to load the caches.
-    # In a pipeline, these caches are passed from the previous step or managed globally.
-    print("Simulating dimension cache loading for standalone run...")
     temp_conn = db_utils.get_db_connection()
     temp_cursor = temp_conn.cursor()
 
-    # Populate player_name_to_identifier_cache
     player_cache_for_run = {}
-    temp_cursor.execute("SELECT identifier, name, full_name, known_as FROM Players;")  # Fetch names for lookup
+    temp_cursor.execute("SELECT identifier, name, full_name, known_as FROM Players;")
     for p_row in temp_cursor.fetchall():
-        if p_row[1]: player_cache_for_run[p_row[1]] = p_row[0]  # name -> id
-        if p_row[2]: player_cache_for_run[p_row[2]] = p_row[0]  # full_name -> id
-        if p_row[3]: player_cache_for_run[p_row[3]] = p_row[0]  # known_as -> id
+        if p_row[1]: player_cache_for_run[p_row[1]] = p_row[0]
+        if p_row[2]: player_cache_for_run[p_row[2]] = p_row[0]
+        if p_row[3]: player_cache_for_run[p_row[3]] = p_row[0]
 
-    # Populate team_id_cache
     team_cache_for_run = {}
     temp_cursor.execute("SELECT team_id, team_name FROM Teams;")
     for t_row in temp_cursor.fetchall():
         team_cache_for_run[t_row[1]] = t_row[0]
 
-    # Populate venue_id_cache
     venue_cache_for_run = {}
     temp_cursor.execute("SELECT venue_id, venue_name, city FROM Venues;")
     for v_row in temp_cursor.fetchall():
@@ -219,6 +224,6 @@ if __name__ == "__main__":
 
     temp_cursor.close()
     temp_conn.close()
-    print("Dimension caches simulated.")
+    logger.info("Dimension caches simulated for standalone run.")
 
     load_matches_and_related(team_cache_for_run, venue_cache_for_run, player_cache_for_run)

@@ -3,9 +3,11 @@ import psycopg2
 import json
 from src import config
 from src import db_utils
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Caches to hold IDs of already inserted dimension data (name -> id)
-# These will be populated after all unique names are inserted and IDs retrieved
 team_id_cache = {}
 venue_id_cache = {}  # Key will be (venue_name, city_name) tuple
 
@@ -16,7 +18,7 @@ def populate_teams_and_venues():
     populates Teams and Venues tables, and fills local caches.
     """
     conn = None
-    print("Starting population of Teams and Venues tables...")
+    logger.info("Starting population of Teams and Venues tables...")
     try:
         conn = db_utils.get_db_connection()
         cursor = conn.cursor()
@@ -45,7 +47,7 @@ def populate_teams_and_venues():
             # Collect Venue Info
             venue_name = info.get('venue')
             city_name = info.get('city')
-            if venue_name:  # Venue name is mandatory for our cache key logic
+            if venue_name:
                 v_name_stripped = venue_name.strip()
                 c_name_stripped = city_name.strip() if city_name else None
                 unique_venues_info[(v_name_stripped, c_name_stripped)] = (v_name_stripped, c_name_stripped)
@@ -57,60 +59,53 @@ def populate_teams_and_venues():
                     "INSERT INTO Teams (team_name) VALUES (%s) ON CONFLICT (team_name) DO NOTHING;", (name,)
                 )
             except Exception as e:
-                print(f"Error inserting team '{name}': {e}")
-                conn.rollback()  # Rollback this specific insert attempt or the whole batch
-                raise  # Or handle more gracefully
+                logger.error(f"Error inserting team '{name}': {e}", exc_info=True)
+                conn.rollback()
+                raise
 
         # Insert Venues
         for key_tuple, val_tuple in unique_venues_info.items():
             venue_name, city = val_tuple
             try:
-                # Assuming a unique constraint on (venue_name, city) or just venue_name if city can be null often
-                # For simplicity, if your DDL has UNIQUE (venue_name), this is fine.
-                # If UNIQUE (venue_name, city), ensure city is handled (e.g. COALESCE(city, 'N/A')) in constraint
                 cursor.execute(
                     "INSERT INTO Venues (venue_name, city) VALUES (%s, %s) ON CONFLICT (venue_name) DO NOTHING;",
-                    # Assuming venue_name is unique key
                     (venue_name, city)
                 )
             except Exception as e:
-                print(f"Error inserting venue '{venue_name}', City '{city}': {e}")
+                logger.error(f"Error inserting venue '{venue_name}', City '{city}': {e}", exc_info=True)
                 conn.rollback()
                 raise
 
         conn.commit()
-        print("Teams and Venues tables populated.")
+        logger.info("Teams and Venues tables populated.")
 
-        # Populate caches by fetching from DB (important for subsequent ETL steps)
         cursor.execute("SELECT team_id, team_name FROM Teams;")
         for row in cursor.fetchall():
-            team_id_cache[row[1]] = row[0]  # name -> id
-        print(f"Team ID cache populated with {len(team_id_cache)} teams.")
+            team_id_cache[row[1]] = row[0]
+        logger.info(f"Team ID cache populated with {len(team_id_cache)} teams.")
 
         cursor.execute("SELECT venue_id, venue_name, city FROM Venues;")
         for row in cursor.fetchall():
-            venue_id_cache[(row[1], row[2])] = row[0]  # (name, city) -> id
-        print(f"Venue ID cache populated with {len(venue_id_cache)} venues.")
+            venue_id_cache[(row[1], row[2])] = row[0]
+        logger.info(f"Venue ID cache populated with {len(venue_id_cache)} venues.")
 
-        return team_id_cache, venue_id_cache  # Return caches for use in main pipeline
+        return team_id_cache, venue_id_cache
 
     except (Exception, psycopg2.Error) as error:
-        print(f"Error populating dimension tables (Teams, Venues): {error}")
+        logger.error(f"Error populating dimension tables (Teams, Venues): {error}", exc_info=True)
         if conn:
             conn.rollback()
-        return {}, {}  # Return empty caches on error
+        return {}, {}
     finally:
         if conn:
-            if 'cursor' in locals() and cursor:
+            if 'cursor' in locals() and cursor and not cursor.closed:
                 cursor.close()
             conn.close()
-            print("PostgreSQL connection for Teams/Venues load is closed.")
+            logger.info("PostgreSQL connection for Teams/Venues load is closed.")
 
 
 if __name__ == "__main__":
-    # This script depends on stg_match_data being populated
-    # and Players table being populated (though not directly used here, it's part of the sequence)
-    # Ensure Teams and Venues tables are created.
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
     global_team_id_cache, global_venue_id_cache = populate_teams_and_venues()
-    # print("Fetched Team Cache:", global_team_id_cache)
-    # print("Fetched Venue Cache:", global_venue_id_cache)
+    logger.info(f"Standalone run finished. Fetched {len(global_team_id_cache)} teams.")
+    logger.info(f"Standalone run finished. Fetched {len(global_venue_id_cache)} venues.")
