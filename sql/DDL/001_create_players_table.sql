@@ -1,13 +1,25 @@
 -- 1. Players Table (Sourced primarily from people.csv)
 CREATE TABLE Players (
-    identifier TEXT PRIMARY KEY,         -- From people.csv 'identifier' column
-    name TEXT,                           -- From people.csv 'name' column (Consider making this NOT NULL if appropriate)
-    full_name TEXT,                      -- From people.csv 'full_name' column
-    date_of_birth DATE,                  -- From people.csv 'date_of_birth', allows NULL
-    country TEXT,                        -- From people.csv 'country', allows NULL
-    batting_hand TEXT,                   -- From people.csv 'batting_hand', allows NULL
-    bowling_hand TEXT,                   -- From people.csv 'bowling_hand', allows NULL
-    bowling_style TEXT,                  -- From people.csv 'bowling_style', allows NULL
-    known_as TEXT,                       -- From people.csv 'known_as', allows NULL
-    roles TEXT[]                         -- From people.csv 'roles', stored as an array of text, allows NULL
+    identifier TEXT PRIMARY KEY,
+    name TEXT,
+    unique_name TEXT,
+    key_bcci TEXT,
+    key_bcci_2 TEXT,
+    key_bigbash TEXT,
+    key_cricbuzz TEXT,
+    key_cricheroes TEXT,
+    key_crichq TEXT,
+    key_cricinfo TEXT,
+    key_cricinfo_2 TEXT,
+    key_cricinfo_3 TEXT,
+    key_cricingif TEXT,
+    key_cricketarchive TEXT,
+    key_cricketarchive_2 TEXT,
+    key_cricketworld TEXT,
+    key_nvplay TEXT,
+    key_nvplay_2 TEXT,
+    key_opta TEXT,
+    key_opta_2 TEXT,
+    key_pulse TEXT,
+    key_pulse_2 TEXT
 );
