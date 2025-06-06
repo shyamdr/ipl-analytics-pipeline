@@ -16,7 +16,7 @@ build/
 dist/
 data/raw_json_cricsheet/
 
-# Configuration files
+# Configuration file
 src/config.py
 
 # IDE and Editor Folders
