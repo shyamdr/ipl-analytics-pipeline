@@ -3,25 +3,22 @@ import psycopg2
 import json
 from src import config
 from src import db_utils
+import logging
 
+logger = logging.getLogger(__name__)
 
-# Assumes caches are loaded and passed, or a global way to access them.
-# player_name_to_identifier_cache is crucial.
 
 def get_player_id_from_name_robust(player_name, cursor, cache):
     """Helper to get player ID, robust to names vs existing IDs in registry"""
     if not player_name: return None
     if player_name in cache: return cache[player_name]
 
-    # Check if player_name itself is an identifier (from people.csv)
     cursor.execute("SELECT identifier FROM Players WHERE identifier = %s;", (player_name,))
     res_id = cursor.fetchone()
     if res_id:
-        cache[player_name] = res_id[0]  # Cache this direct ID lookup
+        cache[player_name] = res_id[0]
         return res_id[0]
 
-    # Original name lookup
-    # Prioritize exact name match, then known_as, then full_name if necessary
     query = """
         SELECT identifier FROM Players 
         WHERE name = %(name)s OR known_as = %(name)s OR full_name = %(name)s 
@@ -33,7 +30,7 @@ def get_player_id_from_name_robust(player_name, cursor, cache):
         cache[player_name] = res_name[0]
         return res_name[0]
 
-    print(f"Warning: Player identifier still not found for: '{player_name}' during delivery processing.")
+    logger.warning(f"Player identifier still not found for: '{player_name}' during delivery processing.")
     return None
 
 
@@ -43,7 +40,7 @@ def load_innings_deliveries_and_related(team_id_cache, player_name_to_identifier
     Powerplays, and Replacements tables.
     """
     conn = None
-    print("Starting population of Innings, Deliveries, and related tables...")
+    logger.info("Starting population of Innings, Deliveries, and related tables...")
     try:
         conn = db_utils.get_db_connection()
         cursor = conn.cursor()
@@ -52,21 +49,21 @@ def load_innings_deliveries_and_related(team_id_cache, player_name_to_identifier
         staged_matches = cursor.fetchall()
 
         for match_file_id, match_json_detail in staged_matches:
-            print(f"Processing innings & deliveries for match_id: {match_file_id}...")
+            logger.debug(f"Processing innings & deliveries for match_id: {match_file_id}...")
             try:
-                info = match_json_detail.get('info', {})  # Needed for team name lookups for bowling team
+                info = match_json_detail.get('info', {})
                 teams_in_match_names = info.get('teams', [])
 
                 json_innings_data = match_json_detail.get('innings', [])
                 for inning_idx, inning_json in enumerate(json_innings_data):
-                    inning_number = inning_idx + 1  # 1-based
+                    inning_number = inning_idx + 1
 
                     batting_team_name = inning_json.get('team')
                     batting_team_id = team_id_cache.get(batting_team_name)
 
                     if not batting_team_id:
-                        print(
-                            f"Critical: Batting team ID not found for '{batting_team_name}' in match {match_file_id}, inning {inning_number}. Skipping inning.")
+                        logger.error(
+                            f"Batting team ID not found for '{batting_team_name}' in match {match_file_id}, inning {inning_number}. Skipping inning.")
                         continue
 
                     # Determine bowling team ID
@@ -78,12 +75,11 @@ def load_innings_deliveries_and_related(team_id_cache, player_name_to_identifier
                         bowling_team_id = team2_id_local if batting_team_id == team1_id_local else team1_id_local
 
                     if not bowling_team_id:
-                        print(
-                            f"Critical: Could not determine bowling team for match {match_file_id}, inning {inning_number}. Skipping inning.")
+                        logger.error(
+                            f"Could not determine bowling team for match {match_file_id}, inning {inning_number}. Skipping inning.")
                         continue
 
-                    target_info = inning_json.get('target',
-                                                  {}) if inning_number == 2 else {}  # Target relevant for 2nd innings
+                    target_info = inning_json.get('target', {}) if inning_number == 2 else {}
 
                     cursor.execute("""
                         INSERT INTO Innings (match_id, inning_number, batting_team_id, bowling_team_id, target_runs, target_overs)
@@ -104,13 +100,13 @@ def load_innings_deliveries_and_related(team_id_cache, player_name_to_identifier
                     for pp_json in inning_json.get('powerplays', []):
                         cursor.execute("""
                             INSERT INTO Powerplays (inning_id, type, from_over, to_over)
-                            VALUES (%s, %s, %s, %s) ON CONFLICT DO NOTHING; -- Add a unique constraint if needed
+                            VALUES (%s, %s, %s, %s) ON CONFLICT DO NOTHING;
                         """, (inning_id_db, pp_json.get('type'), pp_json.get('from'), pp_json.get('to')))
 
                     # --- Deliveries ---
                     current_ball_in_over_count = 0  # Logical ball number as per JSON array order
                     for over_json in inning_json.get('overs', []):
-                        over_number_val = over_json.get('over')  # 0-indexed from JSON
+                        over_number_val = over_json.get('over')
 
                         for delivery_json in over_json.get('deliveries', []):
                             current_ball_in_over_count += 1  # This is the sequence in the deliveries array for the over
@@ -127,12 +123,12 @@ def load_innings_deliveries_and_related(team_id_cache, player_name_to_identifier
                                                                                     player_name_to_identifier_cache)
 
                             if not (batter_identifier and bowler_identifier and non_striker_identifier):
-                                print(
-                                    f"Warning: Skipping delivery in match {match_file_id}, inning {inning_number}, over {over_number_val} due to missing player identifier(s). Batter:'{batter_name}', Bowler:'{bowler_name}', NonStriker:'{non_striker_name}'")
+                                logger.warning(
+                                    f"Skipping delivery in match {match_file_id}, inning {inning_number}, over {over_number_val} due to missing player identifier(s). Batter:'{batter_name}', Bowler:'{bowler_name}', NonStriker:'{non_striker_name}'")
                                 continue
 
                             runs_data = delivery_json.get('runs', {})
-                            extras_data = delivery_json.get('extras', {})  # This is an object like {"wides": 1}
+                            extras_data = delivery_json.get('extras', {})
 
                             cursor.execute("""
                                 INSERT INTO Deliveries (
@@ -149,7 +145,7 @@ def load_innings_deliveries_and_related(team_id_cache, player_name_to_identifier
                                 runs_data.get('batter', 0), runs_data.get('extras', 0), runs_data.get('total', 0),
                                 extras_data.get('wides', 0), extras_data.get('noballs', 0),
                                 extras_data.get('byes', 0), extras_data.get('legbyes', 0),
-                                extras_data.get('penalty', 0),  # Assuming penalty is a key if present
+                                extras_data.get('penalty', 0),
                                 json.dumps(extras_data) if extras_data else None,
                                 json.dumps(delivery_json.get('review')) if delivery_json.get('review') else None
                             ))
@@ -162,15 +158,14 @@ def load_innings_deliveries_and_related(team_id_cache, player_name_to_identifier
                                                                                        player_name_to_identifier_cache)
 
                                 if not player_out_identifier:
-                                    print(
-                                        f"Warning: Skipping wicket for '{player_out_name}' due to missing player ID. Match {match_file_id}, Delivery {delivery_id_db}")
+                                    logger.warning(
+                                        f"Skipping wicket for '{player_out_name}' due to missing player ID. Match {match_file_id}, Delivery {delivery_id_db}")
                                     continue
 
                                 wicket_kind = wicket_json.get('kind')
-                                # Bowler credited unless specific non-bowler kinds
                                 bowler_credited_id = bowler_identifier if wicket_kind not in (
-                                'run out', 'obstructing the field', 'retired hurt', 'handled the ball',
-                                'timed out') else None
+                                    'run out', 'obstructing the field', 'retired hurt', 'handled the ball',
+                                    'timed out') else None
 
                                 cursor.execute("""
                                     INSERT INTO Wickets (delivery_id, player_out_identifier, kind, bowler_credited_identifier)
@@ -208,51 +203,49 @@ def load_innings_deliveries_and_related(team_id_cache, player_name_to_identifier
                                         INSERT INTO Replacements (
                                             match_id, delivery_id, inning_id, team_id, 
                                             player_in_identifier, player_out_identifier, reason
-                                        ) VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING; 
-                                        -- Add a UNIQUE constraint to Replacements table if specific event should not be duplicated
+                                        ) VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING;
                                     """, (
                                         match_file_id, delivery_id_db, inning_id_db, team_replaced_id,
                                         player_in_identifier, player_out_identifier, reason
                                     ))
                         current_ball_in_over_count = 0  # Reset for next over's deliveries array
 
-                conn.commit()  # Commit after each match's innings and deliveries are processed
+                conn.commit()
             except Exception as e_match_detail:
-                print(f"Error processing innings/deliveries for match_id {match_file_id}: {e_match_detail}")
+                logger.error(f"Error processing innings/deliveries for match_id {match_file_id}: {e_match_detail}",
+                             exc_info=True)
                 conn.rollback()
 
-        print("Innings, Deliveries, and related tables populated.")
+        logger.info("Innings, Deliveries, and related tables population attempt finished.")
 
     except (Exception, psycopg2.Error) as error:
-        print(f"Error in load_innings_deliveries_and_related: {error}")
+        logger.error(f"Error in load_innings_deliveries_and_related: {error}", exc_info=True)
         if conn:
             conn.rollback()
     finally:
         if conn:
-            if 'cursor' in locals() and cursor:
+            if 'cursor' in locals() and cursor and not cursor.closed:
                 cursor.close()
             conn.close()
-            print("PostgreSQL connection for Innings/Deliveries load is closed.")
+            logger.info("PostgreSQL connection for Innings/Deliveries load is closed.")
 
 
 if __name__ == "__main__":
-    # This script depends on all previous ETL steps being complete and caches being available.
-    print("Simulating dimension cache loading for standalone run of Innings/Deliveries ETL...")
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    logger.info("Simulating dimension cache loading for standalone run of Innings/Deliveries ETL...")
+
     temp_conn_main = db_utils.get_db_connection()
     temp_cursor_main = temp_conn_main.cursor()
 
-    # Populate player_name_to_identifier_cache
     player_cache_for_run_main = {}
     temp_cursor_main.execute("SELECT identifier, name, full_name, known_as FROM Players;")
     for p_row_main in temp_cursor_main.fetchall():
-        # Order of caching matters if names overlap; simple assignment here
-        if p_row_main[1]: player_cache_for_run_main[p_row_main[1]] = p_row_main[0]  # name
+        if p_row_main[1]: player_cache_for_run_main[p_row_main[1]] = p_row_main[0]
         if p_row_main[3] and p_row_main[3] not in player_cache_for_run_main: player_cache_for_run_main[p_row_main[3]] = \
-        p_row_main[0]  # known_as
+            p_row_main[0]
         if p_row_main[2] and p_row_main[2] not in player_cache_for_run_main: player_cache_for_run_main[p_row_main[2]] = \
-        p_row_main[0]  # full_name
+            p_row_main[0]
 
-    # Populate team_id_cache
     team_cache_for_run_main = {}
     temp_cursor_main.execute("SELECT team_id, team_name FROM Teams;")
     for t_row_main in temp_cursor_main.fetchall():
@@ -260,6 +253,6 @@ if __name__ == "__main__":
 
     temp_cursor_main.close()
     temp_conn_main.close()
-    print("Dimension caches simulated.")
+    logger.info("Dimension caches simulated for standalone run.")
 
     load_innings_deliveries_and_related(team_cache_for_run_main, player_cache_for_run_main)
