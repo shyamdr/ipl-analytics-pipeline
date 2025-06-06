@@ -1,0 +1,51 @@
+- name: "Combined Ranking Example"
+  question: "Give me top 25 batsmen with a combination of best strike rate and average in ipl 2025 having equal weightage for both strikerate and average"
+  sql: |
+    WITH BatterStats AS (
+      SELECT
+        d.batter_identifier,
+        SUM(d.runs_batter) AS total_runs,
+        SUM(CASE WHEN d.extras_wides = 0 THEN 1 ELSE 0 END) AS total_balls_faced,
+        COUNT(w.wicket_id) AS total_outs
+      FROM Deliveries AS d
+      JOIN Innings AS i ON d.inning_id = i.inning_id
+      JOIN Matches AS m ON i.match_id = m.match_id
+      LEFT JOIN Wickets AS w ON d.delivery_id = w.delivery_id AND d.batter_identifier = w.player_out_identifier
+      WHERE m.season_year = 2025
+      GROUP BY d.batter_identifier
+      HAVING SUM(CASE WHEN d.extras_wides = 0 THEN 1 ELSE 0 END) >= 50
+    ),
+    CalculatedAverages AS (
+      SELECT
+        p.name,
+        s.total_runs,
+        (s.total_runs::FLOAT / NULLIF(s.total_balls_faced, 0)) * 100 AS strike_rate,
+        (s.total_runs::FLOAT / NULLIF(s.total_outs, 0)) AS batting_average
+      FROM BatterStats AS s
+      JOIN Players AS p ON s.batter_identifier = p.identifier
+    ),
+    RankedStats AS (
+      SELECT
+        name,
+        strike_rate,
+        batting_average,
+        RANK() OVER (ORDER BY strike_rate DESC) AS rank_sr,
+        RANK() OVER (ORDER BY batting_average DESC) AS rank_avg
+      FROM CalculatedAverages
+      WHERE strike_rate IS NOT NULL AND batting_average IS NOT NULL
+    )
+    SELECT
+      name,
+      ROUND(strike_rate::numeric, 2) AS strike_rate,
+      ROUND(batting_average::numeric, 2) AS batting_average,
+      (rank_sr + rank_avg) AS combined_rank_score
+    FROM RankedStats
+    ORDER BY
+      combined_rank_score ASC
+    LIMIT 25;
+
+# You can add more examples below using the same format:
+# - name: "Another Example Type"
+#   question: "Some other complex question"
+#   sql: |
+#     SELECT ...
