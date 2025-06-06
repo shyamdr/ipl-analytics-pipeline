@@ -16,6 +16,9 @@ build/
 dist/
 data/raw_json_cricsheet/
 
+# Configuration files
+src/config.py
+
 # IDE and Editor Folders
 .idea/
 .vscode/
