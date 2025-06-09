@@ -177,6 +177,27 @@ def run_ai_enrichment():
             # Must add a delay to respect API rate limits
             time.sleep(5)  # 1 request every 2 seconds = 30 requests/minute
 
+        # AI is not reliable sometimes
+        cursor.execute("""
+        UPDATE Players
+            SET bowling_style = CASE
+                WHEN bowling_style in ('RF', 'RAF') THEN 'RF/RAF'
+                WHEN bowling_style in ('RFM', 'RAFM') THEN 'RFM/RAMF'
+                WHEN bowling_style in ('RMF', 'RAMF') THEN 'RMF/RAMF'
+                WHEN bowling_style in ('RM', 'RAM') THEN 'RM/RAM'
+                WHEN bowling_style in ('RMS', 'RAMS') THEN 'RMS/RAMS'
+                WHEN bowling_style in ('RSM', 'RASM') THEN 'RSM/RASM'
+                WHEN bowling_style in ('RS', 'RAS') THEN 'RS/RAS'
+                WHEN bowling_style in ('LF', 'LAF') THEN 'LF/LAF'
+                WHEN bowling_style in ('LFM', 'LAFM') THEN 'LFM/LAMF'
+                WHEN bowling_style in ('LMF', 'LAMF') THEN 'LMF/LAMF'
+                WHEN bowling_style in ('LM', 'LAM') THEN 'LM/LAM'
+                WHEN bowling_style in ('LMS', 'LAMS') THEN 'LMS/LAMS'
+                WHEN bowling_style in ('LSM', 'LASM') THEN 'LSM/LASM'
+                WHEN bowling_style in ('LS', 'LAS') THEN 'LS/LAS'
+                ELSE bowling_style
+            END
+        """)
         conn.commit()
         logger.info("AI enrichment process finished successfully.")
 

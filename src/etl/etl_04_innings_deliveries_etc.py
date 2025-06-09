@@ -136,15 +136,15 @@ def load_innings_deliveries_and_related(team_id_cache, player_name_to_identifier
                                 INSERT INTO Deliveries (
                                     inning_id, over_number, ball_number_in_over,
                                     batter_identifier, bowler_identifier, non_striker_identifier,
-                                    runs_batter, runs_extras, runs_total,
+                                    runs_batter, runs_extras, runs_non_boundary, runs_total,
                                     extras_wides, extras_noballs, extras_byes, extras_legbyes, extras_penalty,
                                     raw_extras_json, raw_review_json
-                                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                                 RETURNING delivery_id;
                             """, (
                                 inning_id_db, over_number_val, current_ball_in_over_count,
                                 batter_identifier, bowler_identifier, non_striker_identifier,
-                                runs_data.get('batter', 0), runs_data.get('extras', 0), runs_data.get('total', 0),
+                                runs_data.get('batter', 0), runs_data.get('extras', 0), runs_data.get('non_boundary', False), runs_data.get('total', 0),
                                 extras_data.get('wides', 0), extras_data.get('noballs', 0),
                                 extras_data.get('byes', 0), extras_data.get('legbyes', 0),
                                 extras_data.get('penalty', 0),

@@ -9,6 +9,7 @@ CREATE TABLE Deliveries (
     non_striker_identifier TEXT REFERENCES Players(identifier) NOT NULL, -- Changed FK
     runs_batter INTEGER NOT NULL,
     runs_extras INTEGER NOT NULL,
+    runs_non_boundary BOOLEAN,
     runs_total INTEGER NOT NULL,
     extras_wides INTEGER DEFAULT 0,
     extras_noballs INTEGER DEFAULT 0,
