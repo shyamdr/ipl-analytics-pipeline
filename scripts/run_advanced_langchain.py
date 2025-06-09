@@ -93,26 +93,12 @@ def clean_generated_sql(raw_sql: str) -> str:
     return cleaned_sql.strip()
 
 
-def is_safe_query(sql_query: str) -> bool:
-    """A safety check to ensure only SELECT statements are executed."""
-    query_lower = sql_query.strip().lower()
-    # Rule 1: Must be a read-only query
-    if not query_lower.startswith("select"):
-        return False
-    # Rule 2: Must not contain any dangerous or data-modifying keywords
-    dangerous_keywords = ["drop", "delete", "insert", "update", "truncate", "grant", "revoke", ";"]
-    for keyword in dangerous_keywords:
-        if keyword in query_lower:
-            return False
-    return True
-
-
 # Replace with this function
 def is_safe_query(sql_query: str) -> bool:
     """A safety check to ensure only SELECT statements are executed."""
     query_lower = sql_query.strip().lower()
     # Rule 1: Must be a read-only query
-    if not query_lower.startswith("select"):
+    if not (query_lower.startswith("select") or query_lower.startswith("with")):
         return False
     # Rule 2: Must not contain any dangerous or data-modifying keywords
     dangerous_keywords = ["drop", "delete", "insert", "update", "truncate", "grant", "revoke"]
@@ -187,7 +173,7 @@ def run_advanced_langchain_tool():
     logger.info(f"Loaded {len(few_shot_examples)} few-shot examples and database schema.")
 
     prompt_template = construct_prompt(db_schema, formatted_examples, "{question}")
-    llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0)
+    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-preview-05-20", temperature=0)
     sql_query_chain = (
             {
                 "schema": lambda x: db_schema,  # Always use the db_schema we loaded

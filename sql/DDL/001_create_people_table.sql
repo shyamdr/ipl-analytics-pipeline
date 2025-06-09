@@ -1,5 +1,5 @@
--- 1. Players Table (Sourced primarily from people.csv)
-CREATE TABLE Players (
+-- 1. People Table (Sourced primarily from people.csv)
+CREATE TABLE People (
     identifier TEXT PRIMARY KEY,
     name TEXT,
     unique_name TEXT,

@@ -7,5 +7,6 @@ CREATE TABLE Innings (
     bowling_team_id INTEGER REFERENCES Teams(team_id) NOT NULL,
     target_runs INTEGER,
     target_overs TEXT,
+    is_super_over BOOLEAN
     UNIQUE (match_id, inning_number)
 );

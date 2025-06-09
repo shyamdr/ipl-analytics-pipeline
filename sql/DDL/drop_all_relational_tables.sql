@@ -1,5 +1,6 @@
 TRUNCATE
-    Players,
+    --Players,
+    People,
     Teams,
     Venues,
     Matches,

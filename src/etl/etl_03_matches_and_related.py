@@ -65,7 +65,7 @@ def load_matches_and_related(team_id_cache, venue_id_cache, player_name_to_ident
                 # *** FIX for season year format ***
                 season_raw = info.get('season')
                 season_year_to_insert = None
-                if season_raw:
+                if len(info.get('dates', [None])) > 1 and season_raw:
                     season_str = str(season_raw)
                     try:
                         # Take the first four characters, which represent the starting year
@@ -73,6 +73,12 @@ def load_matches_and_related(team_id_cache, venue_id_cache, player_name_to_ident
                     except (ValueError, TypeError):
                         logger.error(f"Could not parse season '{season_str}' for match {match_file_id}.")
                         # This will cause the INSERT to fail if season_year column is NOT NULL, which is intended.
+                else:
+                    match_date_str = info.get('dates', [None])[0]
+                    try:
+                        season_year_to_insert = int(match_date_str[:4])
+                    except (ValueError, TypeError):
+                        logger.error(f"Could not parse season '{season_str}' for match {match_file_id}.")
                 # *** End of fix ***
 
                 team1_id = team_id_cache.get(team1_name)

@@ -37,7 +37,7 @@ def load_people_master():
             sql_update_clause = ", ".join(update_clause_parts)
 
             sql = f"""
-                INSERT INTO Players ({sql_columns})
+                INSERT INTO People ({sql_columns})
                 VALUES ({sql_placeholders})
                 ON CONFLICT (identifier) DO UPDATE SET
                     {sql_update_clause};
@@ -60,6 +60,14 @@ def load_people_master():
                 except Exception as e_row:
                     logger.error(f"Error processing CSV row {row_num + 2}: {row}. Error: {e_row}", exc_info=True)
                     skipped_count += 1
+
+            sql = f"""
+                INSERT INTO Players (identifier, name, unique_name, key_cricinfo)
+                SELECT Identifier, name, unique_name, key_cricinfo 
+                FROM People
+                ON CONFLICT (identifier) DO NOTHING;
+            """
+            cursor.execute(sql)
 
             conn.commit()
             logger.info(

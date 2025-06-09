@@ -130,7 +130,7 @@ def run_ai_enrichment():
                 rm.rn = 1
                 -- This condition still finds players who are missing the data we want to enrich
                 AND (p.batting_hand IS NULL OR p.bowling_hand IS NULL OR p.player_role IS NULL OR p.bowling_style IS NULL OR p.date_of_birth IS NULL OR p.country IS NULL)
-            LIMIT 100;
+            LIMIT 50;
         """
         cursor.execute(query)
         players_to_enrich = cursor.fetchall()
@@ -148,7 +148,6 @@ def run_ai_enrichment():
                 f"Processing player {i + 1}/{total_players}: {player_dict.get('name')} ({player_dict.get('identifier')})")
 
             enriched_data = get_player_details_from_ai(player_dict)
-            print(enriched_data)
 
             if enriched_data:
                 # Update the player record in the database
@@ -176,7 +175,7 @@ def run_ai_enrichment():
                 logger.warning(f"Failed to get or parse AI data for player: {player_dict.get('name')}")
 
             # Must add a delay to respect API rate limits
-            time.sleep(4.5)  # 1 request every 2 seconds = 30 requests/minute
+            time.sleep(5)  # 1 request every 2 seconds = 30 requests/minute
 
         conn.commit()
         logger.info("AI enrichment process finished successfully.")

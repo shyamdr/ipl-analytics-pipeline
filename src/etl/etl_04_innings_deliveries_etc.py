@@ -81,17 +81,19 @@ def load_innings_deliveries_and_related(team_id_cache, player_name_to_identifier
 
                     target_info = inning_json.get('target', {}) if inning_number == 2 else {}
 
+                    is_super_over = inning_json.get('super_over', False)
+
                     cursor.execute("""
-                        INSERT INTO Innings (match_id, inning_number, batting_team_id, bowling_team_id, target_runs, target_overs)
-                        VALUES (%s, %s, %s, %s, %s, %s)
+                        INSERT INTO Innings (match_id, inning_number, batting_team_id, bowling_team_id, target_runs, target_overs, is_super_over)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (match_id, inning_number) 
                         DO UPDATE SET batting_team_id = EXCLUDED.batting_team_id, bowling_team_id = EXCLUDED.bowling_team_id, 
-                                     target_runs = EXCLUDED.target_runs, target_overs = EXCLUDED.target_overs
+                                     target_runs = EXCLUDED.target_runs, target_overs = EXCLUDED.target_overs, is_super_over = EXCLUDED.is_super_over
                         RETURNING inning_id;
                     """, (
                         match_file_id, inning_number, batting_team_id, bowling_team_id,
                         target_info.get('runs'),
-                        str(target_info.get('overs')) if target_info.get('overs') is not None else None
+                        str(target_info.get('overs')) if target_info.get('overs') is not None else None, is_super_over
                     # Ensure overs is string or null
                     ))
                     inning_id_db = cursor.fetchone()[0]
