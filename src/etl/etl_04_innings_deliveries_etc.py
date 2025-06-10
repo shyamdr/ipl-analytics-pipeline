@@ -21,7 +21,7 @@ def get_player_id_from_name_robust(player_name, cursor, cache):
 
     query = """
         SELECT identifier FROM Players 
-        WHERE name = %(name)s OR known_as = %(name)s OR full_name = %(name)s 
+        WHERE unique_name = %(name)s
         LIMIT 1;
     """
     cursor.execute(query, {'name': player_name})
@@ -240,6 +240,7 @@ if __name__ == "__main__":
     temp_cursor_main = temp_conn_main.cursor()
 
     player_cache_for_run_main = {}
+    #temp_cursor_main.execute("SELECT identifier, unique_name FROM Players;")
     temp_cursor_main.execute("SELECT identifier, name, full_name, known_as FROM Players;")
     for p_row_main in temp_cursor_main.fetchall():
         if p_row_main[1]: player_cache_for_run_main[p_row_main[1]] = p_row_main[0]

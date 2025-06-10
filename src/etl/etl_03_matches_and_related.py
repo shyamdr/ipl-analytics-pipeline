@@ -16,8 +16,8 @@ def get_player_identifier(player_name, cursor, player_name_to_identifier_cache):
     if player_name in player_name_to_identifier_cache:
         return player_name_to_identifier_cache[player_name]
 
-    cursor.execute("SELECT identifier FROM Players WHERE name = %s OR full_name = %s OR known_as = %s LIMIT 1;",
-                   (player_name, player_name, player_name))
+    cursor.execute("SELECT identifier FROM Players WHERE name = %s OR unique_name = %s LIMIT 1;",
+                   (player_name, player_name))
     result = cursor.fetchone()
     if result:
         player_name_to_identifier_cache[player_name] = result[0]

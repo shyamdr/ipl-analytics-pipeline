@@ -48,6 +48,7 @@ def build_enrichment_prompt(player_data: dict) -> str:
     4.  "date_of_birth": Must be in "YYYY-MM-DD" format. If not found return '1900-01-01'.
     5.  "country": Country of origin of the cricketer. Must be a single country.
     6.  "player_role": Must be one of the ["Batsman", "Bowler", "All-rounder", "Wicket Keeper"]
+    7.  "full_name": Full name of the player
 
     If a value is unknown or the player is not a bowler, return N/A for that key, but please provide the other keys.
     Only return the JSON object and nothing else.
@@ -129,8 +130,16 @@ def run_ai_enrichment():
                 -- This is the key: only select the #1 ranked match for each player
                 rm.rn = 1
                 -- This condition still finds players who are missing the data we want to enrich
-                AND (p.batting_hand IS NULL OR p.bowling_hand IS NULL OR p.player_role IS NULL OR p.bowling_style IS NULL OR p.date_of_birth IS NULL OR p.country IS NULL)
-            LIMIT 50;
+                AND (
+                    p.batting_hand IS NULL OR 
+                    p.bowling_hand IS NULL OR 
+                    p.player_role IS NULL OR 
+                    p.bowling_style IS NULL OR 
+                    p.date_of_birth IS NULL OR 
+                    p.country IS NULL OR
+                    p.full_name IS NULL
+                )
+            LIMIT 1;
         """
         cursor.execute(query)
         players_to_enrich = cursor.fetchall()
@@ -148,6 +157,7 @@ def run_ai_enrichment():
                 f"Processing player {i + 1}/{total_players}: {player_dict.get('name')} ({player_dict.get('identifier')})")
 
             enriched_data = get_player_details_from_ai(player_dict)
+            print(enriched_data)
 
             if enriched_data:
                 # Update the player record in the database
@@ -158,7 +168,8 @@ def run_ai_enrichment():
                         bowling_style = COALESCE(%(bowling_style)s, bowling_style),
                         date_of_birth = COALESCE(%(date_of_birth)s, date_of_birth),
                         country = COALESCE(%(country)s, country),
-                        player_role = COALESCE(%(player_role)s, player_role)
+                        player_role = COALESCE(%(player_role)s, player_role),
+                        full_name = COALESCE(%(full_name)s, full_name)
                     WHERE identifier = %(id)s;
                 """
                 cursor.execute(update_query, {
@@ -168,7 +179,8 @@ def run_ai_enrichment():
                     'date_of_birth': enriched_data.get('date_of_birth'),
                     'country': enriched_data.get('country'),
                     'player_role': enriched_data.get('player_role'),
-                    'id': player_dict['identifier']
+                    'full_name': enriched_data.get('full_name'),
+                    'id': player_dict['identifier'],
                 })
                 logger.info(f"Successfully updated player: {player_dict.get('name')}")
             else:
@@ -197,6 +209,19 @@ def run_ai_enrichment():
                 WHEN bowling_style in ('LS', 'LAS') THEN 'LS/LAS'
                 ELSE bowling_style
             END
+        """)
+
+        cursor.execute("""
+        UPDATE Players
+            SET
+                batting_hand = NULL,
+                bowling_hand = NULL,
+                player_role = NULL,
+                date_of_birth = NULL,
+                country = NULL,
+                bowling_style = NULL,
+                full_name = NULL
+        WHERE batting_hand = 'N/A' AND bowling_hand = 'N/A' AND player_role = 'N/A' AND country = 'N/A' AND bowling_style = 'N/A';'
         """)
         conn.commit()
         logger.info("AI enrichment process finished successfully.")

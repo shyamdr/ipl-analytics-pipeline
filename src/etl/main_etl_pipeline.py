@@ -83,14 +83,29 @@ def run_full_etl_pipeline():
         conn_cache = db_utils.get_db_connection()
         cursor_cache = conn_cache.cursor()
         cursor_cache.execute("SELECT identifier, name, unique_name FROM Players;")
+        # for row in cursor_cache.fetchall():
+        #     identifier, name, unique_name = row
+        #     # Build the cache using the available name columns
+        #     if name == unique_name:
+        #         player_name_to_identifier_cache[name.strip()] = identifier
+        #     if unique_name and unique_name.strip() not in player_name_to_identifier_cache:
+        #         player_name_to_identifier_cache[unique_name.strip()] = identifier
+
         for row in cursor_cache.fetchall():
             identifier, name, unique_name = row
             # Build the cache using the available name columns
-            if name:
+            if name == unique_name:
                 player_name_to_identifier_cache[name.strip()] = identifier
+
+        for row in cursor_cache.fetchall():
+            identifier, name, unique_name = row
             if unique_name and unique_name.strip() not in player_name_to_identifier_cache:
                 player_name_to_identifier_cache[unique_name.strip()] = identifier
+            if name and name.strip() not in player_name_to_identifier_cache:
+                player_name_to_identifier_cache[name.strip()] = identifier
+
         logger.info(f"Player name to identifier cache populated with {len(player_name_to_identifier_cache)} entries.")
+        print(player_name_to_identifier_cache)
         cursor_cache.close()
     except Exception as e:
         logger.error(f"Error populating player name cache: {e}", exc_info=True)
