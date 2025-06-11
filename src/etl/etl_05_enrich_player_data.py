@@ -139,7 +139,7 @@ def run_ai_enrichment():
                     p.country IS NULL OR
                     p.full_name IS NULL
                 )
-            LIMIT 1;
+            LIMIT 100;
         """
         cursor.execute(query)
         players_to_enrich = cursor.fetchall()
@@ -157,7 +157,7 @@ def run_ai_enrichment():
                 f"Processing player {i + 1}/{total_players}: {player_dict.get('name')} ({player_dict.get('identifier')})")
 
             enriched_data = get_player_details_from_ai(player_dict)
-            print(enriched_data)
+            #print(enriched_data)
 
             if enriched_data:
                 # Update the player record in the database
@@ -221,7 +221,7 @@ def run_ai_enrichment():
                 country = NULL,
                 bowling_style = NULL,
                 full_name = NULL
-        WHERE batting_hand = 'N/A' AND bowling_hand = 'N/A' AND player_role = 'N/A' AND country = 'N/A' AND bowling_style = 'N/A';'
+        WHERE batting_hand = 'N/A' AND bowling_hand = 'N/A' AND player_role = 'N/A' AND country = 'N/A' AND bowling_style = 'N/A';
         """)
         conn.commit()
         logger.info("AI enrichment process finished successfully.")

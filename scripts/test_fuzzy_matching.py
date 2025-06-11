@@ -3,12 +3,13 @@
 import logging
 from fuzzywuzzy import fuzz
 from src import db_utils
+import re
 
 #logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 
-def find_player_matches(search_term: str, threshold: int = 80):
+def find_player_matches(search_term: str, threshold: int = 85):
     """
     Connects to the database and finds player names that have a high
     similarity score to the search term.
@@ -23,33 +24,52 @@ def find_player_matches(search_term: str, threshold: int = 80):
         cursor = conn.cursor()
 
         # Fetch all relevant player names from your database
-        cursor.execute("SELECT identifier, name, unique_name, full_name FROM Players;")
+        cursor.execute("SELECT identifier, name, unique_name, full_name FROM Players ORDER BY unique_name;")
         all_players = cursor.fetchall()
+        best_score = 0
 
         for identifier, name, unique_name, full_name in all_players:
-            # We use fuzz.partial_ratio, which is great for finding a substring
-            # e.g., finding "Raina" inside "SK Raina"
-            all_words_string = f"{name} {unique_name} {full_name}"
-            all_words_list = all_words_string.split()
-            union_string = " ".join(dict.fromkeys(all_words_list))
 
-            if name == "SK Raina":
-                print(union_string)
+            unique_name_new = re.sub(r'\(.*\)', '', str(unique_name)).strip()
 
-            #score1 = fuzz.partial_ratio(search_term.lower(), str(name).lower())
-            #score2 = fuzz.partial_ratio(search_term.lower(), str(unique_name).lower())
-            score3 = fuzz.token_set_ratio(search_term.lower(), str(union_string).lower())
+            # Combine all name parts into one long string, safely ignoring any None values
+            name_parts = [name, unique_name_new, full_name]
+            combined_names_string = ' '.join(part for part in name_parts if part)
 
-            # Take the higher of the two scores
-            best_score = score3 #max(score1, score2)
+            # Get a unique set of words to create a clean searchable string
+            unique_words = dict.fromkeys(combined_names_string.lower().split())
+            searchable_name_string = " ".join(unique_words)
 
-            if best_score >= threshold:
+            # if name == "SK Raina":
+            #     print(searchable_name_string)
+
+            score1 = fuzz.token_set_ratio(search_term.lower(), searchable_name_string)
+
+            score2 = fuzz.partial_token_sort_ratio(search_term.lower(), full_name)
+            score3 = fuzz.partial_token_sort_ratio(search_term.lower(), unique_name_new.lower())
+
+            player_best_score = max(score1, score2)
+
+            if player_best_score >= threshold:
                 matches.append({
                     "identifier": identifier,
                     "name": name,
                     "unique_name": unique_name,
-                    "score": best_score
+                    "score": player_best_score
                 })
+                print(searchable_name_string)
+
+            if score1 == 100:
+                logger.info("Found a perfect match. Stopping search.")
+                matches = [matches[-1]]  # Keep only the last-appended match (the perfect one)
+                break
+            elif score2 == 100:
+                logger.info("Found a match")
+                matches = [matches[-1]]
+                break
+            elif score3 == 100:
+                logger.info("found something")
+                matches = [matches[-1]]
 
     except Exception as e:
         logger.error(f"An error occurred: {e}", exc_info=True)
@@ -73,5 +93,5 @@ def find_player_matches(search_term: str, threshold: int = 80):
 if __name__ == "__main__":
     # --- Test it out here ---
     # You can change "virat" to "raina", "dhoni", "vk", etc. to test.
-    input_word = "Suresh Raina"
+    input_word = "s prabhudesai"
     find_player_matches(input_word)
