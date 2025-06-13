@@ -30,11 +30,11 @@ def build_enrichment_prompt(player_data: dict) -> str:
     - name: "{player_data.get('name')}"
     
     Details of the last IPL match played by the cricketer:
-    - ipl season year: "{player_data.get('season_year')}"
+    - ipl season year: "{player_data.get('last_season_year')}"
     - last match date: "{player_data.get('last_match_date')}"
-    - match: "{player_data.get('match')}"
-    - venue: "{player_data.get('venue_name')}"
-    - venue city: "{player_data.get('city')}"
+    - match: "{player_data.get('last_match_played')}"
+    - venue: "{player_data.get('last_venue_name')}"
+    - venue city: "{player_data.get('last_city')}"
     """
 
     # Define the rules and desired output format
@@ -61,6 +61,7 @@ def get_player_details_from_ai(player_data: dict) -> dict | None:
     try:
         model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
         prompt = build_enrichment_prompt(player_data)
+        #print(prompt)
 
         response = model.generate_content(prompt)
 
@@ -221,7 +222,7 @@ def run_ai_enrichment():
                 country = NULL,
                 bowling_style = NULL,
                 full_name = NULL
-        WHERE batting_hand = 'N/A' AND bowling_hand = 'N/A' AND player_role = 'N/A' AND country = 'N/A' AND bowling_style = 'N/A';
+        WHERE batting_hand = 'N/A' AND bowling_hand = 'N/A' AND player_role = 'N/A' AND country = 'N/A' AND bowling_style = 'N/A' AND full_name IS NULL;
         """)
         conn.commit()
         logger.info("AI enrichment process finished successfully.")
