@@ -163,8 +163,11 @@ def run_advanced_langchain_tool():
         return
 
     db_uri = f"postgresql+psycopg2://{config.DB_USER}:{config.DB_PASSWORD}@{config.DB_HOST}:{config.DB_PORT}/{config.DB_NAME}"
-    db = SQLDatabase.from_uri(db_uri)
+    db = SQLDatabase.from_uri(db_uri, ignore_tables = ['people', 'stg_match_data', 'officials'])
     db_schema = db.get_table_info()
+
+    print(db.dialect)
+    print(db.get_usable_table_names())
 
     project_root = pathlib.Path(__file__).parent.parent
     examples_file = project_root / "src/text_to_sql/prompts/few_shot_examples.yaml"
