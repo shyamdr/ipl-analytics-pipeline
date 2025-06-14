@@ -185,31 +185,48 @@ def load_innings_deliveries_and_related(team_id_cache, player_name_to_identifier
                                             VALUES (%s, %s) ON CONFLICT (wicket_id, fielder_player_identifier) DO NOTHING;
                                         """, (wicket_id_db, fielder_identifier))
 
-                            # --- Replacements (Impact Players) ---
-                            # JSON structure: delivery_obj -> 'replacements' -> 'match' (this is an array)
-                            replacements_list_at_delivery = delivery_json.get('replacements', {}).get('match', [])
-                            for rep_event in replacements_list_at_delivery:
-                                team_replaced_name = rep_event.get('team')
-                                player_in_name = rep_event.get('in')
-                                player_out_name = rep_event.get('out')
-                                reason = rep_event.get('reason')
+                            # --- Replacements (Match and Role) ---
+                            replacements_obj = delivery_json.get('replacements', {})
+                            if replacements_obj:
+                                # Process 'match' type replacements
+                                for rep_event in replacements_obj.get('match', []):
+                                    team_name = rep_event.get('team')
+                                    player_in = get_player_id_from_name_robust(rep_event.get('in'), cursor,
+                                                                               player_name_to_identifier_cache)
+                                    player_out = get_player_id_from_name_robust(rep_event.get('out'), cursor,
+                                                                                player_name_to_identifier_cache)
 
-                                team_replaced_id = team_id_cache.get(team_replaced_name)
-                                player_in_identifier = get_player_id_from_name_robust(player_in_name, cursor,
-                                                                                      player_name_to_identifier_cache)
-                                player_out_identifier = get_player_id_from_name_robust(player_out_name, cursor,
-                                                                                       player_name_to_identifier_cache)
+                                    if player_in and player_out:
+                                        cursor.execute("""
+                                            INSERT INTO Replacements (
+                                                match_id, delivery_id, inning_id, team_id, replacement_type, 
+                                                player_in_identifier, player_out_identifier, reason
+                                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING;
+                                        """, (
+                                            match_file_id, delivery_id_db, inning_id_db, team_id_cache.get(team_name),
+                                            'match',
+                                            player_in, player_out, rep_event.get('reason')
+                                        ))
 
-                                if team_replaced_id and player_in_identifier and player_out_identifier:
-                                    cursor.execute("""
-                                        INSERT INTO Replacements (
-                                            match_id, delivery_id, inning_id, team_id, 
-                                            player_in_identifier, player_out_identifier, reason
-                                        ) VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING;
-                                    """, (
-                                        match_file_id, delivery_id_db, inning_id_db, team_replaced_id,
-                                        player_in_identifier, player_out_identifier, reason
-                                    ))
+                                # Process 'role' type replacements
+                                for rep_event in replacements_obj.get('role', []):
+                                    player_in = get_player_id_from_name_robust(rep_event.get('in'), cursor,
+                                                                               player_name_to_identifier_cache)
+                                    # The 'out' player is optional for role replacements
+                                    player_out = get_player_id_from_name_robust(rep_event.get('out'), cursor,
+                                                                                player_name_to_identifier_cache) if rep_event.get(
+                                        'out') else None
+
+                                    if player_in:  # Player 'in' is mandatory
+                                        cursor.execute("""
+                                            INSERT INTO Replacements (
+                                                match_id, delivery_id, inning_id, replacement_type, replaced_role, 
+                                                player_in_identifier, player_out_identifier, reason
+                                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING;
+                                        """, (
+                                            match_file_id, delivery_id_db, inning_id_db, 'role', rep_event.get('role'),
+                                            player_in, player_out, rep_event.get('reason')
+                                        ))
                         current_ball_in_over_count = 0  # Reset for next over's deliveries array
 
                 conn.commit()
