@@ -43,4 +43,4 @@ BEGIN
     -- If no unique match is found after all checks, return NULL
     RETURN NULL;
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql STABLE;
