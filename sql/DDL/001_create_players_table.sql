@@ -81,3 +81,35 @@ COMMENT ON COLUMN public.players.full_name
 
 COMMENT ON COLUMN public.players.first_last_name
     IS 'This is the name of the player in the format - first name and last name for eg: ''Jane Doe'' ; ''Virat Kohli''';
+-- Index: idx_players_first_last_name_lower
+
+-- DROP INDEX IF EXISTS public.idx_players_first_last_name_lower;
+
+CREATE INDEX IF NOT EXISTS idx_players_first_last_name_lower
+    ON public.players USING btree
+    (lower(first_last_name) COLLATE pg_catalog."default" ASC NULLS LAST)
+    TABLESPACE pg_default;
+-- Index: idx_players_full_name_lower
+
+-- DROP INDEX IF EXISTS public.idx_players_full_name_lower;
+
+CREATE INDEX IF NOT EXISTS idx_players_full_name_lower
+    ON public.players USING btree
+    (lower(full_name) COLLATE pg_catalog."default" ASC NULLS LAST)
+    TABLESPACE pg_default;
+-- Index: idx_players_name_lower
+
+-- DROP INDEX IF EXISTS public.idx_players_name_lower;
+
+CREATE INDEX IF NOT EXISTS idx_players_name_lower
+    ON public.players USING btree
+    (lower(name) COLLATE pg_catalog."default" ASC NULLS LAST)
+    TABLESPACE pg_default;
+-- Index: idx_players_unique_name_lower
+
+-- DROP INDEX IF EXISTS public.idx_players_unique_name_lower;
+
+CREATE INDEX IF NOT EXISTS idx_players_unique_name_lower
+    ON public.players USING btree
+    (lower(unique_name) COLLATE pg_catalog."default" ASC NULLS LAST)
+    TABLESPACE pg_default;
