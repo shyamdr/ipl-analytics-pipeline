@@ -92,7 +92,7 @@ def run_ai_enrichment():
         conn = db_utils.get_db_connection()
         cursor = conn.cursor(cursor_factory=extras.DictCursor)
 
-        # Find players from your query who need enrichment
+        # Find players from the DB who need enrichment
         query = """
             WITH RankedMatches AS (
                 -- First, join all the tables together and rank each player's matches by date
@@ -190,7 +190,7 @@ def run_ai_enrichment():
             # Must add a delay to respect API rate limits
             time.sleep(5)  # 1 request every 2 seconds = 30 requests/minute
 
-        # AI is not reliable sometimes
+        # AI is not reliable sometimes, so fixing any discrepancies if present in the bowling_style
         cursor.execute("""
         UPDATE Players
             SET bowling_style = CASE
@@ -212,6 +212,34 @@ def run_ai_enrichment():
             END
         """)
 
+        # Update first_lastname logic
+        cursor.execute("""
+        UPDATE Players
+            SET first_last_name = fn.formatted_name
+            FROM (
+            -- This subquery calculates the correct formatted name for every player
+            WITH NameParts AS (
+                SELECT
+                    identifier,
+                    full_name,
+                    string_to_array(full_name, ' ') AS words
+                FROM Players
+            )
+            SELECT
+                identifier,
+                CASE
+                    WHEN array_length(words, 1) <= 2 THEN full_name -- If 2 words or less, use the original full name
+                    WHEN lower(words[array_length(words, 1) - 1]) IN ('de', 'al', 'ul')
+                        THEN words[1] || ' ' || words[array_length(words, 1) - 1] || ' ' || words[array_length(words, 1)]
+                        -- If the word before the last is 'de' or 'al' or 'ul', include it
+                    ELSE words[1] || ' ' || words[array_length(words, 1)] -- Otherwise, just use the first and last words
+                END AS formatted_name
+            FROM NameParts
+        ) AS fn
+        WHERE Players.identifier = fn.identifier;
+        """)
+
+        # Mark any invalid/un-updated rows to be rechecked during next run
         cursor.execute("""
         UPDATE Players
             SET

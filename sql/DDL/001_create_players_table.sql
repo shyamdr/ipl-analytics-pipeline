@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS public.players
     country text COLLATE pg_catalog."default",
     bowling_style text COLLATE pg_catalog."default",
     full_name text COLLATE pg_catalog."default",
+    first_last_name text COLLATE pg_catalog."default",
     CONSTRAINT players_pkey PRIMARY KEY (identifier)
 )
 
@@ -77,3 +78,6 @@ COMMENT ON COLUMN public.players.bowling_style
 
 COMMENT ON COLUMN public.players.full_name
     IS 'The player''s full name';
+
+COMMENT ON COLUMN public.players.first_last_name
+    IS 'This is the name of the player in the format - first name and last name for eg: ''Jane Doe'' ; ''Virat Kohli''';
