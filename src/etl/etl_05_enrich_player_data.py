@@ -229,7 +229,7 @@ def run_ai_enrichment():
                 identifier,
                 CASE
                     WHEN array_length(words, 1) <= 2 THEN full_name -- If 2 words or less, use the original full name
-                    WHEN lower(words[array_length(words, 1) - 1]) IN ('de', 'al', 'ul')
+                    WHEN lower(words[array_length(words, 1) - 1]) IN ('de', 'du', 'al', 'ul', 'van der')
                         THEN words[1] || ' ' || words[array_length(words, 1) - 1] || ' ' || words[array_length(words, 1)]
                         -- If the word before the last is 'de' or 'al' or 'ul', include it
                     ELSE words[1] || ' ' || words[array_length(words, 1)] -- Otherwise, just use the first and last words

@@ -30,6 +30,21 @@ def find_player_matches(search_term: str, threshold: int = 85):
 
         for identifier, name, unique_name, full_name in all_players:
 
+            # Finding first_last_name
+            words = full_name.split()
+            num_words = len(words)
+
+            if num_words <= 2 : # The name is already in the desired format.
+                first_last_name = full_name
+            else:
+                first_word, last_word, word_before_last = words[0], words[-1], words[-2]
+                if word_before_last.lower() in ['de', 'al', 'ul']:
+                    first_last_name = f"{first_word} {word_before_last} {last_word}"
+                else:
+                    first_last_name = f"{first_word} {last_word}"
+
+            if
+
             unique_name_new = re.sub(r'\(.*\)', '', str(unique_name)).strip()
 
             # Combine all name parts into one long string, safely ignoring any None values
@@ -42,6 +57,8 @@ def find_player_matches(search_term: str, threshold: int = 85):
 
             # if name == "SK Raina":
             #     print(searchable_name_string)
+
+            first_last_name =
 
             score1 = fuzz.token_set_ratio(search_term.lower(), searchable_name_string)
 
@@ -57,7 +74,7 @@ def find_player_matches(search_term: str, threshold: int = 85):
                     "unique_name": unique_name,
                     "score": player_best_score
                 })
-                print(searchable_name_string)
+                print("full_name string is : " + searchable_name_string)
 
             if score1 == 100:
                 logger.info("Found a perfect match. Stopping search.")
@@ -93,5 +110,5 @@ def find_player_matches(search_term: str, threshold: int = 85):
 if __name__ == "__main__":
     # --- Test it out here ---
     # You can change "virat" to "raina", "dhoni", "vk", etc. to test.
-    input_word = "s prabhudesai"
+    input_word = "sachin"
     find_player_matches(input_word)

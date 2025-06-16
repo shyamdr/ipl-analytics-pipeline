@@ -63,7 +63,13 @@ SQL Query:
 
 
 def construct_prompt(schema, examples, user_question):
-    template = """You are a PostgreSQL expert. Your task is to write a single, high-quality, executable PostgreSQL query based on the user's question. You must use the provided schema.
+    template = """You are a PostgreSQL expert. Your task is to write a single, high-quality, executable PostgreSQL query based on the user's question. You must use the provided schema. Given an input question, first create a syntactically correct postgresql query to run, then look at the results of the query and return the answer to the input question.
+
+Here's some general guidelines to follow :
+1. No. of rows to return : Regardless of any superlatives, such as "best, highest, biggest, lowest, smallest, some, a few" etc, ALWAYS return 3 records (use LIMIT 3). By default always use LIMIT 3.  If the user asks - "Give me top n rows" or "Give me exactly n rows" only then use LIMIT n. if the user asks for more than 50 records, cap the final output to LIMIT 50. never output more than 50 rows.
+2. Searching for a player : Do not use the original player name provided by the user in the SQL query for joins or filters. Use the function 'get_player_id_by_name' and pass the input name to search for the player_id from always. The result of this function is to be subsequently used to join or filters.
+3. Choosing right columns : Pay attention to use only the column names that you can see in the schema description. Be careful to not query for columns that do not exist. Also, pay attention to which column is in which table.
+4. Providing right columns : Make sure you do not provide any internal id columns to the user such as player_id, match_id, inning_id etc, instead always provide the actual dimension that is a real-world entity such as if you present venue_id, instead show the name of the venue, if the final output should contain match id, instead of match id, provide the details of the match such as the match was between the two teams A & B and when and where it was played, if required, etc.
 
 ### PostgreSQL Schema:
 {schema}
@@ -166,8 +172,8 @@ def run_advanced_langchain_tool():
     db = SQLDatabase.from_uri(db_uri, ignore_tables = ['people', 'stg_match_data', 'officials'])
     db_schema = db.get_table_info()
 
-    print(db.dialect)
-    print(db.get_usable_table_names())
+    #print(db.dialect)
+    #print(db.get_usable_table_names())
 
     project_root = pathlib.Path(__file__).parent.parent
     examples_file = project_root / "src/text_to_sql/prompts/few_shot_examples.yaml"
