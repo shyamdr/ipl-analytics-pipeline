@@ -43,7 +43,6 @@ def find_player_matches(search_term: str, threshold: int = 85):
                 else:
                     first_last_name = f"{first_word} {last_word}"
 
-            if
 
             unique_name_new = re.sub(r'\(.*\)', '', str(unique_name)).strip()
 
@@ -57,8 +56,6 @@ def find_player_matches(search_term: str, threshold: int = 85):
 
             # if name == "SK Raina":
             #     print(searchable_name_string)
-
-            first_last_name =
 
             score1 = fuzz.token_set_ratio(search_term.lower(), searchable_name_string)
 
