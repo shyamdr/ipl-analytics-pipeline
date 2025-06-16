@@ -25,3 +25,6 @@ src/config.py
 
 # macOS files
 .DS_Store
+
+# testing files
+tests/ai_comparison_against_cricinfo.yaml

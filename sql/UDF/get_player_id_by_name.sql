@@ -40,6 +40,35 @@ BEGIN
         RETURN found_identifier;
     END IF;
 
+	-- STEP 5: FUZZY MATCHING FALLBACK
+    WITH MetaphoneTexts AS ( --FuzzyCandidates
+        SELECT
+            p.identifier,
+			metaphone(p.full_name, 255) AS mcode_full_name,
+			metaphone(p.first_last_name, 255) AS mcode_first_last_name,
+			metaphone(search_name, 255) AS mcode_search_name
+        FROM Players p
+        WHERE p.first_last_name IS NOT NULL
+    ),
+	FuzzyCandidates AS (
+		SELECT
+			*,
+			levenshtein(mcode_search_name, mcode_first_last_name) AS lv_score1,
+			similarity(mcode_search_name, mcode_first_last_name) AS trigram_score1,
+			levenshtein(mcode_search_name, mcode_full_name) AS lv_score2,
+			similarity(mcode_search_name, mcode_full_name) AS trigram_score2
+		FROM MetaphoneTexts
+	)
+	SELECT identifier INTO found_identifier
+	FROM FuzzyCandidates
+	WHERE
+	    ((lv_score1 <= round(0.3 * GREATEST(LENGTH(mcode_search_name), LENGTH(mcode_first_last_name))) AND trigram_score1 >= 0.3)
+	    OR (lv_score2 <= round(0.3 * GREATEST(LENGTH(mcode_search_name), LENGTH(mcode_full_name))) AND trigram_score1 >= 0.3))
+	ORDER BY lv_score1 ASC, trigram_score1 DESC, lv_score2 ASC, trigram_score2 DESC
+	LIMIT 1;
+
+	RETURN found_identifier;
+
     -- If no unique match is found after all checks, return NULL
     RETURN NULL;
 END;

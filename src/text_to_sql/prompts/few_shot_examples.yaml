@@ -8,7 +8,7 @@
         SUM(CASE WHEN d.extras_wides = 0 THEN 1 ELSE 0 END) AS total_balls_faced,
         COUNT(w.wicket_id) AS total_outs
       FROM Deliveries AS d
-      JOIN Innings AS i ON d.inning_id = i.inning_id
+      JOIN Innings AS i ON d.inning_id = i.inning_id AND NOT i.is_super_over -- Do not consider super over stats, default case
       JOIN Matches AS m ON i.match_id = m.match_id
       LEFT JOIN Wickets AS w ON d.delivery_id = w.delivery_id AND d.batter_identifier = w.player_out_identifier
       WHERE m.season_year = 2025
@@ -42,10 +42,56 @@
     FROM RankedStats
     ORDER BY
       combined_rank_score ASC
-    LIMIT 25;
+    LIMIT 25; -- user defined limit
 
-# You can add more examples below using the same format:
-# - name: "Another Example Type"
-#   question: "Some other complex question"
-#   sql: |
-#     SELECT ...
+- name: "Boundary Counting Example"
+  question: "Which batter hit the most sixes in the 2024 season of IPL?"
+  sql: |
+    SELECT
+      p.name AS batter_name,
+      COUNT(*) AS sixes_count
+    FROM Deliveries AS d
+    JOIN Players AS p
+      ON d.batter_identifier = p.identifier
+    JOIN Innings AS i
+      ON d.inning_id = i.inning_id AND NOT i.is_super_over -- Do not consider super over stats, default case
+    JOIN Matches AS m
+      ON i.match_id = m.match_id
+    WHERE
+      d.runs_batter = 6 AND m.season_year = 2024
+    GROUP BY
+      p.name
+    ORDER BY
+      sixes_count DESC
+    LIMIT 3; -- default limit
+
+- name: "Partnership Run Rate Example"
+  question: "Among batting pairs with at least 300 runs, which one had the best run rate in IPL 2024?"
+  sql: |
+    WITH PartnershipStats AS (
+      SELECT
+        LEAST(d.batter_identifier, d.non_striker_identifier) AS player1_id,
+        GREATEST(d.batter_identifier, d.non_striker_identifier) AS player2_id,
+        SUM(d.runs_batter) AS partnership_runs,
+        -- This is the corrected logic for legitimate balls (excluding wides AND no-balls).
+        COUNT(CASE WHEN d.extras_wides = 0 AND d.extras_noballs = 0 THEN 1 END) AS legitimate_balls
+      FROM Deliveries d
+      JOIN Innings i ON d.inning_id = i.inning_id AND NOT i.is_super_over -- Do not consider super over stats, default case
+      JOIN Matches m ON i.match_id = m.match_id
+      WHERE m.season_year = 2024
+      GROUP BY
+        LEAST(d.batter_identifier, d.non_striker_identifier),
+        GREATEST(d.batter_identifier, d.non_striker_identifier)
+      HAVING
+        SUM(d.runs_batter) >= 300
+    )
+    SELECT
+      p1.name AS player1,
+      p2.name AS player2,
+      ps.partnership_runs,
+      ROUND((ps.partnership_runs * 6.0 / NULLIF(ps.legitimate_balls, 0)), 2) AS run_rate
+    FROM PartnershipStats ps
+    JOIN Players p1 ON ps.player1_id = p1.identifier
+    JOIN Players p2 ON ps.player2_id = p2.identifier
+    ORDER BY run_rate DESC
+    LIMIT 3; -- default limit

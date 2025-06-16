@@ -105,7 +105,7 @@ def run_full_etl_pipeline():
                 player_name_to_identifier_cache[name.strip()] = identifier
 
         logger.info(f"Player name to identifier cache populated with {len(player_name_to_identifier_cache)} entries.")
-        print(player_name_to_identifier_cache)
+        #print(player_name_to_identifier_cache)
         cursor_cache.close()
     except Exception as e:
         logger.error(f"Error populating player name cache: {e}", exc_info=True)
