@@ -138,13 +138,16 @@ def execute_query(sql_query: str):
             print("\n--- Query Results ---")
             if not results:
                 print("The query returned no results.")
+                return [], []
             else:
                 # Use tabulate to format the output nicely
                 print(tabulate(results, headers=headers, tablefmt="psql"))
+                return results, headers
             print("--------------------\n")
         else:
             conn.commit()
             logger.info("Query executed, but it did not return any data rows (e.g., it was an UPDATE or INSERT).")
+            return [], []
 
     except (Exception, psycopg2.Error) as error:
         logger.error(f"Database query failed: {error}", exc_info=True)
@@ -221,11 +224,51 @@ def run_advanced_langchain_tool():
             print("----------------------\n")
 
             # --- MODIFIED: Execute the query ---
-            execute_query(cleaned_sql)
+            results, headers = execute_query(cleaned_sql)
+
+            if results:
+                # If we have data, ask AI to summarize it
+                logger.info("Summarizing results with AI ....")
+                final_answer = summarize_results_with_ai(user_question, results, headers)
+                print(f"🤖 **Answer:** {final_answer}")
+            else:
+                # If the query results nothing
+                logger.info("Query executed successfully but returned no results from the database.")
+            print("\n") # for clean separation for the next query
 
         except Exception as e:
             logger.error(f"An error occurred in the main loop: {e}", exc_info=True)
 
+
+def summarize_results_with_ai(user_question: str, db_results: list, headers: list) -> str:
+    """
+    Takes the raw DB results and asks the AI to formulate a natural language answer.
+    """
+    if not db_results:
+        return "The query ran successfully but returned no results."
+
+    # Convert the data to a more readable format for the prompt
+    data_as_string = tabulate(db_results, headers=headers, tablefmt="psql")
+
+    prompt = f"""
+    You are a helpful cricket analyst. Your job is to answer the user's question in a clear, friendly, natural language sentence.
+    Use the data provided below, which was retrieved from a database, to formulate your answer.
+
+    Original user question: "{user_question}"
+
+    Data retrieved from database:
+    {data_as_string}
+
+    Based on the data, what is the answer to the user's question?
+    """
+
+    try:
+        model = genai.GenerativeModel('gemini-1.5-flash-latest')
+        response = model.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        logger.error(f"Failed to summarize results with AI: {e}", exc_info=True)
+        return "There was an error summarizing the results."
 
 if __name__ == "__main__":
     run_advanced_langchain_tool()
