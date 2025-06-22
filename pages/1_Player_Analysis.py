@@ -34,7 +34,7 @@ engine = get_db_engine()
 def get_player_list(_engine):
     """Fetches a list of all players for the dropdown."""
     logger.info("Fetching player list...")
-    query = "SELECT first_last_name as name, identifier FROM Players WHERE full_name IS NOT NULL ORDER BY first_last_name;"
+    query = "SELECT first_last_name as name, identifier FROM Players WHERE full_name IS NOT NULL AND full_name != 'N/A' ORDER BY first_last_name;"
     try:
         data = pd.read_sql(query, _engine)
         return data
@@ -80,7 +80,8 @@ player_list_df = get_player_list(engine)
 # --- Player Selection Dropdown ---
 selected_player_name = st.selectbox(
     "Select a Player",
-    options=player_list_df['name']
+    options=player_list_df['name'],
+    key='player_select_box'
 )
 
 if selected_player_name:
