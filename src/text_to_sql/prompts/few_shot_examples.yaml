@@ -95,3 +95,59 @@
     JOIN Players p2 ON ps.player2_id = p2.identifier
     ORDER BY run_rate DESC
     LIMIT 3; -- default limit
+
+- name: "Hat trick checking example"
+  question: "who has taken most hat tricks in ipl?"
+  sql: |
+    WITH Deliveries AS (
+    	-- Add running_ball_number for each bowler in an inning
+    	SELECT 
+    		ROW_NUMBER() OVER (PARTITION BY inning_id, bowler_identifier ORDER BY delivery_id ASC) AS bowler_ball_num,
+    		*
+    	FROM deliveries
+    ),
+    BowlerWickets AS (
+    	-- identify every credited wicket and its bowler
+    	SELECT
+    	d.inning_id,
+    	d.delivery_id,
+    	w.bowler_credited_identifier AS bowler_id,
+    	bowler_ball_num AS wicket
+    	FROM Deliveries d
+    	JOIN Wickets w ON d.delivery_id = w.delivery_id
+    	WHERE w.bowler_credited_identifier IS NOT NULL
+    ),
+    HatrickCandidates AS (
+    	-- Find out the ball numbers for the previous wicket and previous-to-previous wicket
+    	SELECT 
+    		*,
+    		LAG(wicket, 1) OVER (PARTITION BY inning_id, bowler_id ORDER BY delivery_id ASC) AS wicket_prev,
+    		LAG(wicket, 2) OVER (PARTITION BY inning_id, bowler_id ORDER BY delivery_id ASC) AS wicket_prev_prev
+    	FROM BowlerWickets
+    )
+    SELECT
+    	-- If previous and previous-to-previous wicket occured in consecutive ball_numbers then consider it as a hat trick
+    	p.name AS bowler_name,
+    	COUNT(ht.bowler_id) AS hat_tricks_count
+    FROM HatrickCandidates ht
+    JOIN Players p ON ht.bowler_id = p.identifier
+    WHERE 
+    	wicket = wicket_prev+1 AND wicket_prev = wicket_prev_prev+1
+    GROUP BY
+      	p.name
+    ORDER BY
+      	hat_tricks_count DESC
+    LIMIT 3;
+
+- name: "Runs conceded by a bowler"
+  question: "How many runs Josh Hazlewood conceded in IPL 2025?"
+  sql: |
+    SELECT
+      SUM(d.runs_batter) + SUM(d.extras_wides) + SUM(d.extras_noballs) AS total_runs_conceded -- Only wides, noballs and runs scored by the batsman are tallied towards the bowler figures
+    FROM Deliveries AS d
+    JOIN Innings AS i
+      ON d.inning_id = i.inning_id AND NOT i.is_super_over
+    JOIN Matches AS m
+      ON i.match_id = m.match_id
+    WHERE
+      d.bowler_identifier = get_player_id_by_name('Josh Hazlewood') AND m.season_year = 2025;
