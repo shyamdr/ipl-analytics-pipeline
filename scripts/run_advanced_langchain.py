@@ -29,6 +29,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+_global_llm_cache = {}
+
 
 # --- Helper Functions ---
 def load_few_shot_examples(examples_path):
@@ -158,88 +160,6 @@ def execute_query(sql_query: str):
             conn.close()
 
 
-def run_advanced_langchain_tool():
-    load_dotenv()
-    if not os.getenv("GOOGLE_API_KEY"):
-        logger.error("ERROR: GOOGLE_API_KEY not found. Please set it in your .env file.")
-        return
-
-    try:
-        genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-        logger.info("Gemini API configured successfully.")
-    except Exception as e:
-        logger.error(f"Error configuring API: {e}")
-        return
-
-    db_uri = f"postgresql+psycopg2://{config.DB_USER}:{config.DB_PASSWORD}@{config.DB_HOST}:{config.DB_PORT}/{config.DB_NAME}"
-    db = SQLDatabase.from_uri(db_uri, ignore_tables = ['people', 'stg_match_data', 'officials'])
-    db_schema = db.get_table_info()
-
-    #print(db.dialect)
-    #print(db.get_usable_table_names())
-
-    project_root = pathlib.Path(__file__).parent.parent
-    examples_file = project_root / "src/text_to_sql/prompts/few_shot_examples.yaml"
-    few_shot_examples = load_few_shot_examples(examples_file)
-    formatted_examples = format_examples(few_shot_examples)
-    logger.info(f"Loaded {len(few_shot_examples)} few-shot examples and database schema.")
-
-    prompt_template = construct_prompt(db_schema, formatted_examples, "{question}")
-    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-preview-05-20", temperature=0)
-    sql_query_chain = (
-            {
-                "schema": lambda x: db_schema,  # Always use the db_schema we loaded
-                "examples": lambda x: formatted_examples,  # Always use the examples we loaded
-                "question": RunnablePassthrough()  # Pass the user's question through
-            }
-            | prompt_template
-            | llm
-            | StrOutputParser()
-    )
-
-    print("-" * 50)
-    print("Advanced LangChain Text-to-SQL Tool is Ready.")
-    print("Type your question and press Enter. Type 'exit' to quit.")
-    print("-" * 50)
-
-    while True:
-        try:
-            user_question = input("> ")
-            if user_question.lower() in ['exit', 'quit']:
-                break
-            if not user_question:
-                continue
-
-            logger.info("Generating SQL query with custom LangChain prompt...")
-            raw_sql_response = sql_query_chain.invoke(user_question)
-
-            cleaned_sql = clean_generated_sql(raw_sql_response)
-
-            print("\n--- Generated SQL ---")
-            print(cleaned_sql)
-
-            pyperclip.copy(cleaned_sql)
-            logger.info("✅ SQL query also copied to clipboard.")
-
-            print("----------------------\n")
-
-            # --- MODIFIED: Execute the query ---
-            results, headers = execute_query(cleaned_sql)
-
-            if results:
-                # If we have data, ask AI to summarize it
-                logger.info("Summarizing results with AI ....")
-                final_answer = summarize_results_with_ai(user_question, results, headers)
-                print(f"🤖 **Answer:** {final_answer}")
-            else:
-                # If the query results nothing
-                logger.info("Query executed successfully but returned no results from the database.")
-            print("\n") # for clean separation for the next query
-
-        except Exception as e:
-            logger.error(f"An error occurred in the main loop: {e}", exc_info=True)
-
-
 def summarize_results_with_ai(user_question: str, db_results: list, headers: list) -> str:
     """
     Takes the raw DB results and asks the AI to formulate a natural language answer.
@@ -263,12 +183,106 @@ def summarize_results_with_ai(user_question: str, db_results: list, headers: lis
     """
 
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash-latest')
+        model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
         response = model.generate_content(prompt)
         return response.text
     except Exception as e:
         logger.error(f"Failed to summarize results with AI: {e}", exc_info=True)
         return "There was an error summarizing the results."
 
+
+def run_advanced_langchain_tool(user_question: str) -> tuple[str, list, list, bool]:
+    if not _global_llm_cache:
+        load_dotenv()
+        api_key = os.getenv("GOOGLE_API_KEY")
+        if not api_key:
+            logger.error("ERROR: GOOGLE_API_KEY not found. Please set it in your .env file.")
+            return "API key not found.", [], [], False
+
+        try:
+            genai.configure(api_key=api_key)
+            logger.info("Gemini API configured successfully.")
+            _global_llm_cache['llm'] = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
+        except Exception as e:
+            logger.error(f"Error configuring API: {e}")
+            return f"API Configuration failed: {e}", [], [], False
+
+    llm_model = _global_llm_cache['llm']
+
+    db_uri = f"postgresql+psycopg2://{config.DB_USER}:{config.DB_PASSWORD}@{config.DB_HOST}:{config.DB_PORT}/{config.DB_NAME}"
+    db = SQLDatabase.from_uri(db_uri, ignore_tables = ['people', 'stg_match_data', 'officials'])
+    db_schema = db.get_table_info()
+
+    #print(db.dialect)
+    #print(db.get_usable_table_names())
+
+    # Load few-shot examples
+    project_root = pathlib.Path(__file__).parent.parent
+    examples_file = project_root / "src/text_to_sql/prompts/few_shot_examples.yaml"
+    few_shot_examples = load_few_shot_examples(examples_file)
+    formatted_examples = format_examples(few_shot_examples)
+    logger.info(f"Loaded {len(few_shot_examples)} few-shot examples and database schema.")
+
+    # Build the LangChain componenets (Prompt and Chain)
+    prompt_template = construct_prompt(db_schema, formatted_examples, "{question}")
+    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-preview-05-20", temperature=0)
+    sql_query_chain = (
+            {
+                "schema": lambda x: db_schema,  # Always use the db_schema we loaded
+                "examples": lambda x: formatted_examples,  # Always use the examples we loaded
+                "question": RunnablePassthrough()  # Pass the user's question through
+            }
+            | prompt_template
+            | llm
+            | StrOutputParser()
+    )
+
+    try:
+        logger.info(f"Generating SQL query for question: '{user_question}'")
+        raw_sql_response = sql_query_chain.invoke(user_question)
+        generated_sql = clean_generated_sql(raw_sql_response)
+        logger.info(f"Generated SQL:\n{generated_sql.strip()}")
+
+        # Copy results to clipboard
+        #pyperclip.copy(generated_sql.strip())
+        #logger.info("✅ SQL query also copied to clipboard.")
+
+        # Execute the query to get raw data
+        results, headers = execute_query(generated_sql)
+
+        if results:
+            # If we have data, ask AI to summarize it
+            logger.info("Summarizing results with AI ....")
+            final_answer = summarize_results_with_ai(user_question, results, headers)
+            success_status = True
+            logger.info(f"AI Answer:\n{final_answer}")
+        else:
+            # If the query results nothing
+            logger.info("Query executed successfully but returned no results from the database.")
+            success_status = True
+
+    except Exception as e:
+        logger.error(f"An error occurred during AI SQL generation or execution: {e}", exc_info=True)
+        final_answer = f"Sorry, I encountered an error: {e}"
+        success_status = False
+
+    return final_answer, results, headers, success_status
+
+
 if __name__ == "__main__":
-    run_advanced_langchain_tool()
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    logger.info("Running SQL Agent in standalone test mode.")
+
+    # Example usage for testing
+    test_question = "How many matches were played in IPL 2023?"
+    final_answer, results_data, results_headers, success_status = run_advanced_langchain_tool(test_question)
+
+    print("\n--- Standalone Test Results ---")
+    print(f"Question: {test_question}")
+    print(f"AI Answer: {final_answer}")
+    if results_data:
+        print("Query Results:\n", tabulate(results_data, headers=results_headers, tablefmt="psql"))
+    else:
+        print("No query results data.")
+    print(f"Success: {success_status}")
+    print("------------------------------")
