@@ -15,6 +15,7 @@ logs/
 build/
 dist/
 data/raw_json_cricsheet/
+/_archive_dashboard/
 
 # Configuration file
 src/config.py
@@ -26,5 +27,6 @@ src/config.py
 # macOS files
 .DS_Store
 
-# testing files
+# Other files
 tests/ai_comparison_against_cricinfo.yaml
+/backups/*.dump
