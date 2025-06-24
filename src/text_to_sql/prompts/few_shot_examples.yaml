@@ -63,7 +63,7 @@
       p.name
     ORDER BY
       sixes_count DESC
-    LIMIT 3; -- default limit
+    LIMIT 10; -- default limit
 
 - name: "Partnership Run Rate Example"
   question: "Among batting pairs with at least 300 runs, which one had the best run rate in IPL 2024?"
@@ -94,7 +94,7 @@
     JOIN Players p1 ON ps.player1_id = p1.identifier
     JOIN Players p2 ON ps.player2_id = p2.identifier
     ORDER BY run_rate DESC
-    LIMIT 3; -- default limit
+    LIMIT 10; -- default limit
 
 - name: "Hat trick checking example"
   question: "who has taken most hat tricks in ipl?"
@@ -137,7 +137,7 @@
       	p.name
     ORDER BY
       	hat_tricks_count DESC
-    LIMIT 3;
+    LIMIT 10;
 
 - name: "Runs conceded by a bowler"
   question: "How many runs Josh Hazlewood conceded in IPL 2025?"
