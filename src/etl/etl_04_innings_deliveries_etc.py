@@ -53,6 +53,7 @@ def load_innings_deliveries_and_related(team_id_cache, player_name_to_identifier
             try:
                 info = match_json_detail.get('info', {})
                 teams_in_match_names = info.get('teams', [])
+                people_registry = info.get('registry', {}).get('people', {})
 
                 json_innings_data = match_json_detail.get('innings', [])
                 for inning_idx, inning_json in enumerate(json_innings_data):
@@ -117,12 +118,13 @@ def load_innings_deliveries_and_related(team_id_cache, player_name_to_identifier
                             bowler_name = delivery_json.get('bowler')
                             non_striker_name = delivery_json.get('non_striker')
 
-                            batter_identifier = get_player_id_from_name_robust(batter_name, cursor,
-                                                                               player_name_to_identifier_cache)
-                            bowler_identifier = get_player_id_from_name_robust(bowler_name, cursor,
-                                                                               player_name_to_identifier_cache)
-                            non_striker_identifier = get_player_id_from_name_robust(non_striker_name, cursor,
-                                                                                    player_name_to_identifier_cache)
+                            #batter_identifier = get_player_id_from_name_robust(batter_name, cursor, player_name_to_identifier_cache)
+                            #bowler_identifier = get_player_id_from_name_robust(bowler_name, cursor, player_name_to_identifier_cache)
+                            #non_striker_identifier = get_player_id_from_name_robust(non_striker_name, cursor, player_name_to_identifier_cache)
+
+                            batter_identifier = people_registry[batter_name]
+                            bowler_identifier = people_registry[bowler_name]
+                            non_striker_identifier = people_registry[non_striker_name]
 
                             if not (batter_identifier and bowler_identifier and non_striker_identifier):
                                 logger.warning(
@@ -156,8 +158,8 @@ def load_innings_deliveries_and_related(team_id_cache, player_name_to_identifier
                             # --- Wickets ---
                             for wicket_json in delivery_json.get('wickets', []):
                                 player_out_name = wicket_json.get('player_out')
-                                player_out_identifier = get_player_id_from_name_robust(player_out_name, cursor,
-                                                                                       player_name_to_identifier_cache)
+                                #player_out_identifier = get_player_id_from_name_robust(player_out_name, cursor, player_name_to_identifier_cache)
+                                player_out_identifier = people_registry[player_out_name]
 
                                 if not player_out_identifier:
                                     logger.warning(
@@ -177,8 +179,8 @@ def load_innings_deliveries_and_related(team_id_cache, player_name_to_identifier
 
                                 for fielder_json in wicket_json.get('fielders', []):
                                     fielder_name = fielder_json.get('name')
-                                    fielder_identifier = get_player_id_from_name_robust(fielder_name, cursor,
-                                                                                        player_name_to_identifier_cache)
+                                    #fielder_identifier = get_player_id_from_name_robust(fielder_name, cursor, player_name_to_identifier_cache)
+                                    fielder_identifier = people_registry[fielder_name]
                                     if fielder_identifier:
                                         cursor.execute("""
                                             INSERT INTO WicketFielders (wicket_id, fielder_player_identifier)
@@ -191,10 +193,10 @@ def load_innings_deliveries_and_related(team_id_cache, player_name_to_identifier
                                 # Process 'match' type replacements
                                 for rep_event in replacements_obj.get('match', []):
                                     team_name = rep_event.get('team')
-                                    player_in = get_player_id_from_name_robust(rep_event.get('in'), cursor,
-                                                                               player_name_to_identifier_cache)
-                                    player_out = get_player_id_from_name_robust(rep_event.get('out'), cursor,
-                                                                                player_name_to_identifier_cache)
+                                    #player_in = get_player_id_from_name_robust(rep_event.get('in'), cursor, player_name_to_identifier_cache)
+                                    #player_out = get_player_id_from_name_robust(rep_event.get('out'), cursor, player_name_to_identifier_cache)
+                                    player_in = people_registry[rep_event.get('in')]
+                                    player_out = people_registry[rep_event.get('out')]
 
                                     if player_in and player_out:
                                         cursor.execute("""
@@ -210,12 +212,11 @@ def load_innings_deliveries_and_related(team_id_cache, player_name_to_identifier
 
                                 # Process 'role' type replacements
                                 for rep_event in replacements_obj.get('role', []):
-                                    player_in = get_player_id_from_name_robust(rep_event.get('in'), cursor,
-                                                                               player_name_to_identifier_cache)
+                                    #player_in = get_player_id_from_name_robust(rep_event.get('in'), cursor, player_name_to_identifier_cache)
+                                    player_in = people_registry[rep_event.get('in')]
                                     # The 'out' player is optional for role replacements
-                                    player_out = get_player_id_from_name_robust(rep_event.get('out'), cursor,
-                                                                                player_name_to_identifier_cache) if rep_event.get(
-                                        'out') else None
+                                    player_out = get_player_id_from_name_robust(rep_event.get('out'), cursor, player_name_to_identifier_cache) if rep_event.get('out') else None
+                                    player_out = people_registry[rep_event.get('out')] if rep_event.get('out') else None
 
                                     if player_in:  # Player 'in' is mandatory
                                         cursor.execute("""
