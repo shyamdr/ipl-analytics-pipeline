@@ -146,6 +146,7 @@ def load_matches_and_related(team_id_cache, venue_id_cache, player_name_to_ident
                 ))
 
                 json_players_info = info.get('players', {})
+                people_registry = info.get('registry', {}).get('people', {})
                 for team_name_in_json, player_name_list in json_players_info.items():
                     current_team_id = team_id_cache.get(team_name_in_json)
                     if not current_team_id:
@@ -153,7 +154,8 @@ def load_matches_and_related(team_id_cache, venue_id_cache, player_name_to_ident
                             f"Team ID not found for team '{team_name_in_json}' in match {match_file_id} for MatchPlayers.")
                         continue
                     for player_name in player_name_list:
-                        player_identifier = get_player_identifier(player_name, cursor, player_name_to_identifier_cache)
+                        #player_identifier = get_player_identifier(player_name, cursor, player_name_to_identifier_cache)
+                        player_identifier = people_registry[player_name]
                         if player_identifier:
                             cursor.execute("""
                                 INSERT INTO MatchPlayers (match_id, player_identifier, team_id)
@@ -161,7 +163,8 @@ def load_matches_and_related(team_id_cache, venue_id_cache, player_name_to_ident
                             """, (match_file_id, player_identifier, current_team_id))
 
                 for pom_player_name in info.get('player_of_match', []):
-                    player_identifier = get_player_identifier(pom_player_name, cursor, player_name_to_identifier_cache)
+                    #player_identifier = get_player_identifier(pom_player_name, cursor, player_name_to_identifier_cache)
+                    player_identifier = people_registry[pom_player_name]
                     if player_identifier:
                         cursor.execute("""
                             INSERT INTO PlayerOfMatchAwards (match_id, player_identifier) VALUES (%s, %s)
@@ -177,8 +180,8 @@ def load_matches_and_related(team_id_cache, venue_id_cache, player_name_to_ident
                         official_names_to_process.append(official_name_or_list)
 
                     for official_name in official_names_to_process:
-                        official_identifier = get_player_identifier(official_name, cursor,
-                                                                    player_name_to_identifier_cache)
+                        #official_identifier = get_player_identifier(official_name, cursor,player_name_to_identifier_cache)
+                        official_identifier = people_registry[official_name]
                         if official_identifier:
                             cursor.execute("""
                                 INSERT INTO MatchOfficialsAssignment (match_id, official_identifier, match_role)
