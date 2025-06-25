@@ -35,8 +35,8 @@ BEGIN
     ),
     SplitName AS (
         SELECT 
-            TRIM(SPLIT_PART(search_name, ' ', 1)) AS first_name,
-            TRIM(SPLIT_PART(search_name, ' ', 2)) AS last_name
+            TRIM(SPLIT_PART(LOWER(search_name), ' ', 1)) AS first_name,
+            TRIM(SPLIT_PART(LOWER(search_name), ' ', 2)) AS last_name
     ),
     NameVariants AS (
         SELECT 
