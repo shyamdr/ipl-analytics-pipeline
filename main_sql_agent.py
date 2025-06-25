@@ -102,7 +102,7 @@ if generate_button and user_query:
     st.session_state['last_question'] = user_query
 
     # Call the core AI logic
-    with st.spinner("Thinking... Generating SQL and fetching answer..."):
+    with st.spinner("Thinking... Generating query and fetching answer..."):
         final_answer, results_data, results_headers, success_status = run_advanced_langchain_tool(user_query)
 
     st.session_state['last_answer'] = final_answer
