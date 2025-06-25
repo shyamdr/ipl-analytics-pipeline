@@ -12,6 +12,7 @@ import logging
 
 # Import the core AI functionality from the scripts folder
 from scripts.run_advanced_langchain import run_advanced_langchain_tool
+from scripts.chart_generator import generate_visualizations
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -127,5 +128,12 @@ if st.session_state['api_called_success']:
             columns=st.session_state['last_results_headers'],
             index=custom_index)
         st.dataframe(df_results, use_container_width=True)
+
+        with st.expander("Show Debug Info"):
+            st.write("DataFrame Info (dtypes):")
+            # Create a new DataFrame from the dtypes for clean printing
+            st.dataframe(df_results.dtypes.astype(str), use_container_width=True)
+        generate_visualizations(df_results)
+
     elif st.session_state['api_called_success'] and not st.session_state['last_results_data']:
         st.info("The query executed successfully but returned no results from the database.")
