@@ -68,10 +68,11 @@ def construct_prompt(schema, examples, user_question):
     template = """You are a PostgreSQL expert. Your task is to write a single, high-quality, executable PostgreSQL query based on the user's question. You must use the provided schema. Given an input question, first create a syntactically correct postgresql query to run, then look at the results of the query and return the answer to the input question.
 
 Here's some general guidelines to follow :
-1. No. of rows to return : Regardless of any superlatives, such as "best, highest, biggest, lowest, smallest, some, a few" etc, ALWAYS return 10 records (use LIMIT 10). By default always use LIMIT 10.  If the user asks - "Give me top n rows" or "Give me exactly n rows" only then use LIMIT n. if the user asks for more than 100 records, cap the final output to LIMIT 100. never output more than 100 rows.
+1. No. of rows to return : Regardless of any superlatives, such as "best, highest, biggest, lowest, smallest, some, a few" etc, by default, ALWAYS return 10 records (use LIMIT 10). If the user asks - "Give me top n rows" or "Give me exactly n rows" only then use LIMIT n. If the user question asks for a set of data that is fixed such as on a time-frame like "trend across all the seasons" or "year-wise" or something similar, then instead of default limit, use maximum limit i.e (LIMIT 100). If the user asks for more than 100 records, cap the final output to LIMIT 100. never output more than 100 rows.
 2. Searching for a player : Do not use the original player name provided by the user in the SQL query for joins or filters. Use the function 'get_player_id_by_name' and pass the input name to search for the player_id from always. The result of this function is to be subsequently used to join or filters.
 3. Choosing right columns : Pay attention to use only the column names that you can see in the schema description. Be careful to not query for columns that do not exist. Also, pay attention to which column is in which table.
 4. Providing right columns : Make sure you do not provide any internal id columns to the user such as player_id, match_id, inning_id etc, instead always provide the actual dimension that is a real-world entity such as if you present venue_id, instead show the name of the venue, if the final output should contain match id, instead of match id, provide the details of the match such as the match was between the two teams A & B and when and where it was played, if required, etc.
+5. **CRITICAL:** Ensure the generated SQL is always syntactically correct and executable in PostgreSQL. Double-check all keywords, table aliases(make sure they are not SQL keywords), and column references. If you are unsure, try a simpler approach.
 
 ### PostgreSQL Schema:
 {schema}
@@ -120,12 +121,18 @@ def is_safe_query(sql_query: str) -> bool:
 
 
 def execute_query(sql_query: str):
+
+    conn = None
+    results = []
+    headers = []
+    error_message = ""
+    success = False
+
     """Executes a safe SQL query and displays the results in a formatted table."""
     if not is_safe_query(sql_query):
         logger.warning("Execution blocked: The generated query is not a safe SELECT statement.")
-        return
+        return results, headers, False, error_message
 
-    conn = None
     try:
         conn = db_utils.get_db_connection()
         cursor = conn.cursor()
@@ -140,24 +147,34 @@ def execute_query(sql_query: str):
             print("\n--- Query Results ---")
             if not results:
                 print("The query returned no results.")
-                return [], []
+                success = True
+                error_message = "The query ran successfully but returned no results were obtained."
+                #return [], []
             else:
                 # Use tabulate to format the output nicely
                 print(tabulate(results, headers=headers, tablefmt="psql"))
-                return results, headers
+                success = True
+                #return results, headers
             print("--------------------\n")
         else:
             conn.commit()
             logger.info("Query executed, but it did not return any data rows (e.g., it was an UPDATE or INSERT).")
-            return [], []
+            success = True
+            error_message = "Query executed successfully, but no data was returned (e.g., not a SELECT query)."
+            #return [], []
 
     except (Exception, psycopg2.Error) as error:
         logger.error(f"Database query failed: {error}", exc_info=True)
+        logger.error(error_message, exc_info=True)
+        success = False
+
     finally:
         if conn:
             if 'cursor' in locals() and cursor and not cursor.closed:
                 cursor.close()
             conn.close()
+
+    return results, headers, success, error_message
 
 
 def summarize_results_with_ai(user_question: str, db_results: list, headers: list) -> str:
@@ -237,6 +254,11 @@ def run_advanced_langchain_tool(user_question: str) -> tuple[str, list, list, bo
             | StrOutputParser()
     )
 
+    final_answer = "Sorry, I couldn't process that request." # Default error message for the user
+    results = []
+    headers = []
+    success_status = False
+
     try:
         logger.info(f"Generating SQL query for question: '{user_question}'")
         raw_sql_response = sql_query_chain.invoke(user_question)
@@ -248,22 +270,28 @@ def run_advanced_langchain_tool(user_question: str) -> tuple[str, list, list, bo
         #logger.info("✅ SQL query also copied to clipboard.")
 
         # Execute the query to get raw data
-        results, headers = execute_query(generated_sql)
+        results, headers, success_from_exec, query_execution_error_msg = execute_query(generated_sql)
 
-        if results:
-            # If we have data, ask AI to summarize it
-            logger.info("Summarizing results with AI ....")
-            final_answer = summarize_results_with_ai(user_question, results, headers)
-            success_status = True
-            logger.info(f"AI Answer:\n{final_answer}")
+        if success_from_exec:
+            if results:
+                # If we have data, ask AI to summarize it
+                logger.info("Summarizing results with AI ....")
+                final_answer = summarize_results_with_ai(user_question, results, headers)
+                success_status = True
+                logger.info(f"AI Answer:\n{final_answer}")
+            else:
+                # If the query results nothing
+                final_answer = query_execution_error_msg if query_execution_error_msg else "The query executed successfully but returned no results."
+                success_status = True
+                logger.info(final_answer)
         else:
-            # If the query results nothing
-            logger.info("Query executed successfully but returned no results from the database.")
-            success_status = True
+            final_answer = "I encountered an issue while retrieving data. Please try rephrasing your question or check the data availability. (Technical details logged for debugging)."
+            success_status = False
+            logger.error(f"SQL execution failed for user question '{user_question}'. Error: {query_execution_error_msg}")
 
     except Exception as e:
         logger.error(f"An error occurred during AI SQL generation or execution: {e}", exc_info=True)
-        final_answer = f"Sorry, I encountered an error: {e}"
+        final_answer = "I apologize, but I encountered an unexpected error. Could you please try asking your question again in a different way?"
         success_status = False
 
     return final_answer, results, headers, success_status
