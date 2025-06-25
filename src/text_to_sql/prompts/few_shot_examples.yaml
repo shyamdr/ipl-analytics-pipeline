@@ -151,3 +151,52 @@
       ON i.match_id = m.match_id
     WHERE
       d.bowler_identifier = get_player_id_by_name('Josh Hazlewood') AND m.season_year = 2025;
+
+- name: "Centuries example"
+  question: "How many centuries Chris Gayle has scored in IPL?"
+  sql: |
+    WITH Hundreds AS (
+    SELECT 
+    	inning_id,
+    	batter_identifier,
+    	SUM(runs_batter) AS runs
+    FROM Deliveries d
+    WHERE
+    	batter_identifier = (SELECT get_player_id_by_name('Chris Gayle'))
+    GROUP BY 
+    	inning_id,
+    	batter_identifier
+    HAVING SUM(runs_batter) >= 100
+    )
+    SELECT 
+    	first_last_name AS player,
+    	COUNT(1) AS total_centuries
+    FROM Hundreds h
+    JOIN Players p ON h. batter_identifier = p.identifier
+    GROUP BY first_last_name
+    
+- name: "Usage of time-frame based LIMIT"
+  question: "What is the average first innings score in ipl season wise?"
+  sql: |
+    SELECT
+      m.season_year,
+      ROUND(AVG(total_runs)::numeric, 2) AS average_first_innings_score
+    FROM Matches AS m
+    JOIN Innings AS i
+      ON m.match_id = i.match_id
+    JOIN (
+      SELECT
+        inning_id,
+        SUM(runs_total) AS total_runs
+      FROM Deliveries
+      GROUP BY
+        inning_id
+    ) AS d
+      ON i.inning_id = d.inning_id
+    WHERE
+      i.inning_number = 1 AND NOT i.is_super_over
+    GROUP BY
+      m.season_year
+    ORDER BY
+      m.season_year DESC
+    LIMIT 100; -- max limit, because the user is asking for a particular subset of data that is "every season")
