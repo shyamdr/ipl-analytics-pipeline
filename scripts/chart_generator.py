@@ -3,6 +3,30 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 
+def initialize_session_state():
+    """Initializes session state variables if they don't exist."""
+    defaults = {
+        'chart_type': 'Bar Chart',
+        'active_filters': {},
+        'filter_to_remove': None,
+        'summarize_toggle': False,
+        'group_by_cols': [],
+        'config_category_col': None,
+        'config_value_cols': [],
+        'config_color_col': None,
+        'config_orientation': 'Horizontal',
+        'config_barmode': 'group',
+        'config_x_col_line': None,
+        'config_y_cols_line': [],
+        'config_color_col_line': None,
+        'config_markers_line': True,
+        'config_area_fill_line': False,
+        'config_trendline_line': False
+    }
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
+
 
 # ==============================================================================
 # 1. CHART ELIGIBILITY CHECKER
@@ -52,176 +76,285 @@ def get_eligible_charts(df):
     return sorted(eligible_charts), numeric_cols, categorical_cols
 
 
-def generate_visualizations(df):
+def build_chart_studio(df):
     """
-    Displays a UI for the user to select and configure charts.
+    Renders a single, stateful, and modular Chart Studio UI that adapts to user selections.
+    This version corrects the order of operations to fix the summarization bug.
     """
+    st.write("---")
+    st.write("### Chart Studio")
+
+    # Clean the dataframe once
     df_clean = clean_dataframe(df)
     if df_clean.empty:
         st.info("The query returned no data to visualize.")
         return
 
-    st.subheader("Chart Studio")
+    # Initialize all session state variables if they don't exist
+    initialize_session_state()
 
-    chart_type = st.selectbox(
+    if st.session_state.filter_to_remove:
+        col_to_del = st.session_state.filter_to_remove
+        if col_to_del in st.session_state.active_filters:
+            del st.session_state.active_filters[col_to_del]
+        # Reset the flag so this action doesn't repeat on the next run
+        st.session_state.filter_to_remove = None
+
+    # --- TOP-LEVEL CHART TYPE SELECTOR ---
+    st.selectbox(
         "Choose a chart type to build:",
-        options=["Bar Chart", "Line Chart", "Pie/Donut Chart", "Scatter Plot", "Bubble Chart", "Histogram", "Tree Map", "Sunburst Chart", "Heat Map", "Radar Chart", "Sankey Chart", "Funnel Chart"]
+        options=["Bar Chart", "Line Chart", "Pie Chart"],
+        key='chart_type'  # Bind this to session state
     )
 
-    if chart_type == "Bar Chart":
-        build_bar_chart(df_clean)
+    # --- RENDER ALL UI TABS FIRST to capture user input into session_state ---
+    tab_config, tab_summary, tab_filter = st.tabs([
+        "📊 Configure Chart",
+        "⚙️ Summarize Data",
+        "🔍 Filter Data"
+    ])
 
+    with tab_filter:
+        render_filter_tab(df_clean)  # Pass the original clean df for filter options
 
-# ==============================================================================
-# 3. INDIVIDUAL PLOTTING FUNCTIONS
-# Each function creates one type of chart.
-# ==============================================================================
+    # The config tab will determine which columns are available for summarization
+    with tab_config:
+        if st.session_state.chart_type == 'Bar Chart':
+            render_bar_chart_config(df_clean)  # Pass df_clean to get full list of columns
+        elif st.session_state.chart_type == 'Line Chart':
+            render_line_chart_config(df_clean)
 
-# --- Standard Charts ---
+    with tab_summary:
+        # Pass df_clean so the Group By dropdown has all categorical columns
+        render_summary_tab(df_clean)
 
-def build_bar_chart(df):
-    """
-    Displays a UI for building a customized bar chart, with an option to aggregate data.
-    """
+        # --- PROCESS THE DATA *AFTER* ALL UI WIDGETS HAVE BEEN RENDERED ---
+    # This ensures we use the most up-to-date selections from session_state
+    df_processed = process_data(df_clean)
+
+    # --- RENDER THE PLOT PREVIEW using the correctly processed data ---
     st.write("---")
-    st.write("### Bar Chart Options")
+    st.write("### Chart Preview")
 
-    # 1. Analyze dataframe to find column types
-    all_cols = df.columns.tolist()
-    numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
-    categorical_cols = df.select_dtypes(include=['object']).columns.tolist()
+    if st.session_state.chart_type == 'Bar Chart':
+        create_bar_chart_from_state(df_processed)
+    elif st.session_state.chart_type == 'Line Chart':
+        create_line_chart_from_state(df_processed)
 
-    df_to_plot = df.copy()
 
-    with st.expander("Filter Data (Optional)"):
-        # Initialize a session state variable to store active filters
-        if 'active_filters' not in st.session_state:
-            st.session_state.active_filters = {}
+def process_data(df):
+    """
+    Applies filtering and aggregation based on session state.
+    Returns the processed dataframe.
+    """
+    df_processed = df.copy()
 
-        # UI to add a new filter
+    # 1. Apply filters
+    for col, val in st.session_state.get('active_filters', {}).items():
+        if col in df_processed.columns:
+            if df_processed[col].dtype == 'object':
+                df_processed = df_processed[df_processed[col].isin(val)]
+            else:
+                df_processed = df_processed[df_processed[col].between(val[0], val[1])]
+
+    # 2. Apply summarization
+    if st.session_state.get('summarize_toggle') and st.session_state.get('group_by_cols'):
+        try:
+            # Get aggregation functions for only the selected value columns
+            agg_functions = {
+                col: st.session_state[f'agg_{col}']
+                for col in st.session_state.config_value_cols
+                if f'agg_{col}' in st.session_state
+            }
+            if agg_functions:
+                df_processed = df_processed.groupby(st.session_state.group_by_cols).agg(agg_functions).reset_index()
+        except Exception as e:
+            st.error(f"Failed to group data: {e}")
+
+    return df_processed
+
+
+def render_filter_tab(df):
+    """Renders the UI for the Filter Data tab."""
+    with st.container(border=True):
         st.write("**Add a new filter:**")
-        col_to_filter = st.selectbox("Select column to filter:", options=df.columns, index=None,
-                                     placeholder="Choose a column")
+        col_to_filter = st.selectbox("Column to filter:", options=df.columns, index=None, placeholder="Choose a column",
+                                     key="col_filter_select")
 
         if col_to_filter:
+            # Filter definition UI... (This logic remains the same as before)
             if df[col_to_filter].dtype == 'object':
                 unique_vals = df[col_to_filter].unique()
-                selected_vals = st.multiselect(f"Select values for '{col_to_filter}':", options=unique_vals)
-                if st.button(f"Apply filter on '{col_to_filter}'"):
+                selected_vals = st.multiselect(f"Values for '{col_to_filter}':", options=unique_vals,
+                                               key=f"filter_val_{col_to_filter}")
+                if st.button("Apply Filter", key=f"apply_{col_to_filter}"):
                     st.session_state.active_filters[col_to_filter] = selected_vals
-                    st.rerun()  # Rerun to apply the filter immediately
-
-            elif pd.api.types.is_numeric_dtype(df[col_to_filter]) and df[col_to_filter].nunique() > 1:
+                    #st.rerun()
+            elif pd.api.types.is_numeric_dtype(df[col_to_filter]):
                 min_val, max_val = float(df[col_to_filter].min()), float(df[col_to_filter].max())
-                slider_range = st.slider(f"Select range for '{col_to_filter}':", min_val, max_val, (min_val, max_val))
-                if st.button(f"Apply filter on '{col_to_filter}'"):
-                    st.session_state.active_filters[col_to_filter] = slider_range
-                    st.rerun()
+                # Get current filter value if it exists, otherwise use full range
+                current_val = st.session_state.active_filters.get(col_to_filter, (min_val, max_val))
+                selected_range = st.slider(
+                    f"Range for '{col_to_filter}':",
+                    min_value=min_val,
+                    max_value=max_val,
+                    value=current_val,
+                    key=f"filter_val_{col_to_filter}"
+                )
+                if st.button("Apply Filter", key=f"apply_{col_to_filter}"):
+                    st.session_state.active_filters[col_to_filter] = selected_range
 
-        # Display active filters and allow their removal
-        if st.session_state.active_filters:
+        if st.session_state.get('active_filters'):
             st.write("**Active Filters:**")
-            for col, val in st.session_state.active_filters.items():
-                if st.button(f"{col} = {str(val)[:30]}... ❌", key=f"del_{col}"):
-                    del st.session_state.active_filters[col]
-                    st.rerun()
+            st.write("double-click to remove existing filters")
+            # Create a copy of items to avoid issues while iterating and deleting
+            for col, val in list(st.session_state.active_filters.items()):
+                if st.button(f"{col}: {str(val)[:30]}... ❌", key=f"del_{col}"):
+                    st.session_state.filter_to_remove = col
+                    #del st.session_state.active_filters[col]
+                    #st.rerun()
 
-    # Apply the stored filters to the dataframe
-    for col, val in st.session_state.active_filters.items():
-        if df_to_plot[col].dtype == 'object':
-            df_to_plot = df_to_plot[df_to_plot[col].isin(val)]
-        else:  # Numeric
-            df_to_plot = df_to_plot[df_to_plot[col].between(val[0], val[1])]
 
-    if not numeric_cols or not categorical_cols:
-        st.warning("To build a Bar Chart, your data needs at least one numeric column and one categorical column.")
-        return
+def render_summary_tab(df):
+    """Renders the UI for the Summarize Data tab."""
+    with st.container(border=True):
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            st.toggle("Enable Summarization", key='summarize_toggle')
 
-    df_to_plot = df  # By default, use the original detailed dataframe
+        if st.session_state.summarize_toggle:
+            with col2:
+                st.multiselect("Group By:", options=df.select_dtypes(include=['object']).columns, key='group_by_cols')
 
-    # --- NEW TAB-BASED UI FOR A CLEANER LOOK ---
-    tab1, tab2 = st.tabs(["📊 Configure Chart", "⚙️ Summarize Data (Optional)"])
+            if st.session_state.group_by_cols and st.session_state.config_value_cols:
+                st.write("**Define Aggregation for Selected Value Columns:**")
+                agg_cols = st.columns(len(st.session_state.config_value_cols))
+                for i, col in enumerate(st.session_state.config_value_cols):
+                    with agg_cols[i]:
+                        st.selectbox(f"Agg for '{col}':", options=['sum', 'mean', 'max', 'min', 'count'],
+                                     key=f"agg_{col}")
 
-    with tab1:
-        st.write("**Chart Axes & Style**")
-        plot_categorical_cols = df_to_plot.select_dtypes(include=['object']).columns.tolist()
-        plot_numeric_cols = df_to_plot.select_dtypes(include=['number']).columns.tolist()
 
-        if not plot_numeric_cols or not plot_categorical_cols:
-            st.warning("Not enough data to plot after filtering.")
-            return
-
-        # Let user select value columns first
-        value_cols = st.multiselect("Value Axis (Numeric):", options=plot_numeric_cols,
-                                    default=plot_numeric_cols[0] if plot_numeric_cols else [])
+def render_bar_chart_config(df):
+    """Renders the UI for configuring a Bar Chart."""
+    with st.container(border=True):
+        st.write("**1. Select Axes**")
+        plot_numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
+        plot_categorical_cols = df.select_dtypes(include=['object']).columns.tolist()
 
         col1, col2 = st.columns(2)
         with col1:
-            category_col = st.selectbox("Category Axis (Text):", options=plot_categorical_cols)
+            st.selectbox("Category Axis (Text):", options=plot_categorical_cols, key='config_category_col')
         with col2:
-            color_col = st.selectbox("Color by:", options=[None] + plot_categorical_cols)
+            st.multiselect("Value Axis (Numeric):", options=plot_numeric_cols, key='config_value_cols')
 
-        orientation = st.radio("Orientation:", ["Horizontal", "Vertical"], horizontal=True, index=0)
-        barmode = st.radio("Bar Mode:", ['group', 'stack'], horizontal=True,
-                           help="Only applies if you select multiple 'Value' columns.")
-
-    with tab2:
-        st.write("**Aggregation Options**")
-        summarize_toggle = st.toggle("Enable Summarization", value=False)
-
-        group_by_cols = []
-        agg_functions = {}
-
-        if summarize_toggle:
-            group_by_cols = st.multiselect("Group By:", options=plot_categorical_cols)
-
-            if group_by_cols:
-                st.write("**Define Aggregation for Selected Value Columns:**")
-                # FEATURE 2: ONLY show aggregation options for the columns selected in the "Value Axis"
-                for col in value_cols:
-                    agg_choice = st.selectbox(f"Aggregation for '{col}':",
-                                              options=['Sum', 'Mean', 'Max', 'Min', 'Count'], key=f"agg_{col}")
-                    agg_functions[col] = agg_choice.lower()
-
-                # Perform aggregation
-                try:
-                    # Select only the columns needed for grouping and aggregation
-                    cols_to_agg = group_by_cols + value_cols
-                    df_agg = df_to_plot[cols_to_agg]
-                    df_to_plot = df_agg.groupby(group_by_cols).agg(agg_functions).reset_index()
-                except Exception as e:
-                    st.error(f"Failed to group data. Error: {e}")
-                    return
-
-    # --- Plotting (uses the final state of df_to_plot) ---
-    if category_col and value_cols:
-        try:
-            # Re-sort data for better presentation after potential aggregation
-            sort_col = value_cols[0]
-            if sort_col in df_to_plot.columns:
-                df_to_plot = df_to_plot.sort_values(by=sort_col, ascending=(orientation == "Horizontal"))
-
-            x_axis, y_axis = (category_col, value_cols) if orientation == "Vertical" else (value_cols, category_col)
-
-            fig = px.bar(df_to_plot, x=x_axis, y=y_axis, color=color_col,
-                         title=f"{', '.join(value_cols)} by {category_col}",
-                         template="plotly_white", barmode=barmode,
-                         orientation='v' if orientation == 'Vertical' else 'h')
-
-            legend_title = ", ".join(value_cols)
-            fig.update_layout(legend_title_text=legend_title)
-
-            st.plotly_chart(fig, use_container_width=True)
-        except Exception as e:
-            st.error(f"Failed to create chart. Error: {e}")
+        st.write("**2. Select Style**")
+        col3, col4, col5 = st.columns(3)
+        with col3:
+            st.selectbox("Color by:", options=[None] + plot_categorical_cols, key='config_color_col')
+        with col4:
+            st.radio("Orientation:", ["Horizontal", "Vertical"], horizontal=True, key='config_orientation')
+        with col5:
+            st.radio("Bar Mode:", ['group', 'stack'], horizontal=True, key='config_barmode')
 
 
-def create_line_chart(df, n_cols, c_cols):
-    st.write(f"#### Line Chart: {n_cols[0]} over {c_cols[0] if c_cols else 'Index'}")
-    x_axis = c_cols[0] if c_cols else df.index
-    df_sorted = df.sort_values(by=x_axis)
-    fig = px.line(df_sorted, x=x_axis, y=n_cols[0], template="plotly_white", markers=True)
-    st.plotly_chart(fig, use_container_width=True)
+def create_bar_chart_from_state(df):
+    """Plots a bar chart using parameters stored in session_state."""
+    # Retrieve all params from session state
+    category_col = st.session_state.config_category_col
+    value_cols = st.session_state.config_value_cols
+
+    if not category_col or not value_cols:
+        st.info("Please configure the chart axes in the 'Configure Chart' tab.")
+        return
+
+    # ... The rest of your plotting logic from px.bar onwards ...
+    # This function would be very similar to the plotting part of the old build_bar_chart
+    try:
+        df_sorted = df.sort_values(by=value_cols[0], ascending=(st.session_state.config_orientation == "Horizontal"))
+        x_axis, y_axis = (category_col, value_cols) if st.session_state.config_orientation == "Vertical" else (
+        value_cols, category_col)
+
+        fig = px.bar(df_sorted, x=x_axis, y=y_axis, color=st.session_state.config_color_col,
+                     title=f"{', '.join(value_cols)} by {category_col}", template="plotly_white",
+                     barmode=st.session_state.config_barmode,
+                     orientation='v' if st.session_state.config_orientation == 'Vertical' else 'h')
+        st.plotly_chart(fig, use_container_width=True)
+    except Exception as e:
+        st.error(f"Failed to create chart: {e}")
+
+
+def render_line_chart_config(df):
+    """Renders the UI for configuring a Line Chart."""
+    with st.container(border=True):
+        st.write("**1. Select Axes**")
+        plot_numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
+        # For line charts, the x-axis can be numeric or categorical (like seasons)
+        plot_x_axis_cols = df.columns.tolist()
+
+        col1, col2 = st.columns(2)
+        with col1:
+            st.selectbox("X-Axis (Time or Category):", options=plot_x_axis_cols, key='config_x_col_line')
+        with col2:
+            st.multiselect("Y-Axis (Values):", options=plot_numeric_cols, key='config_y_cols_line')
+
+        st.write("**2. Select Style**")
+        col3, col4, col5 = st.columns(3)
+        with col3:
+            st.selectbox("Color by (Optional):", options=[None] + plot_x_axis_cols, key='config_color_col_line')
+        with col4:
+            st.toggle("Show Markers", value=True, key='config_markers_line')
+        with col5:
+            st.toggle("Fill Area (Area Chart)", value=False, key='config_area_fill_line')
+
+        st.toggle("Show Trendline (for Scatter data)", value=False, key='config_trendline_line',
+                  help="Adds a regression line. Best used when X and Y are both numeric.")
+
+
+def create_line_chart_from_state(df):
+    """Plots a line chart using parameters stored in session_state."""
+    x_col = st.session_state.config_x_col_line
+    y_cols = st.session_state.config_y_cols_line
+
+    if not x_col or not y_cols:
+        st.info("Please configure the X-Axis and Y-Axis in the 'Configure Chart' tab.")
+        return
+
+    try:
+        # Sort data by x-axis for a coherent line
+        df_sorted = df.sort_values(by=x_col)
+
+        # Check for area fill option
+        area_fill = "tozeroy" if st.session_state.config_area_fill_line else None
+
+        fig = px.line(
+            df_sorted,
+            x=x_col,
+            y=y_cols,
+            color=st.session_state.config_color_col_line,
+            markers=st.session_state.config_markers_line,
+            template="plotly_white",
+            title=f"{', '.join(y_cols)} over {x_col}"
+        )
+
+        # Apply area fill if toggled
+        if area_fill:
+            fig.update_traces(fill=area_fill)
+
+        # Add trendline if toggled
+        if st.session_state.config_trendline_line:
+            # Trendlines work best on scatter plots, so we add them this way
+            # Note: This works best for a single Y-axis column
+            if len(y_cols) == 1:
+                trend_fig = px.scatter(df_sorted, x=x_col, y=y_cols[0], trendline="ols")
+                fig.add_trace(trend_fig.data[1])  # Add the trendline trace to the line chart
+            else:
+                st.warning("Trendline can only be shown for a single Y-Axis selection.")
+
+        st.plotly_chart(fig, use_container_width=True)
+
+    except Exception as e:
+        st.error(f"Failed to create line chart: {e}")
 
 
 def create_scatter_plot(df, n_cols, c_cols):
