@@ -15,7 +15,13 @@ def initialize_session_state():
         'config_value_cols': [],
         'config_color_col': None,
         'config_orientation': 'Horizontal',
-        'config_barmode': 'group'
+        'config_barmode': 'group',
+        'config_x_col_line': None,
+        'config_y_cols_line': [],
+        'config_color_col_line': None,
+        'config_markers_line': True,
+        'config_area_fill_line': False,
+        'config_trendline_line': False
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -115,7 +121,8 @@ def build_chart_studio(df):
     with tab_config:
         if st.session_state.chart_type == 'Bar Chart':
             render_bar_chart_config(df_clean)  # Pass df_clean to get full list of columns
-        # Other chart configs would go here
+        elif st.session_state.chart_type == 'Line Chart':
+            render_line_chart_config(df_clean)
 
     with tab_summary:
         # Pass df_clean so the Group By dropdown has all categorical columns
@@ -131,8 +138,8 @@ def build_chart_studio(df):
 
     if st.session_state.chart_type == 'Bar Chart':
         create_bar_chart_from_state(df_processed)
-    # elif st.session_state.chart_type == 'Line Chart':
-    #     create_line_chart_from_state(df_processed)
+    elif st.session_state.chart_type == 'Line Chart':
+        create_line_chart_from_state(df_processed)
 
 
 def process_data(df):
@@ -277,12 +284,77 @@ def create_bar_chart_from_state(df):
         st.error(f"Failed to create chart: {e}")
 
 
-def create_line_chart(df, n_cols, c_cols):
-    st.write(f"#### Line Chart: {n_cols[0]} over {c_cols[0] if c_cols else 'Index'}")
-    x_axis = c_cols[0] if c_cols else df.index
-    df_sorted = df.sort_values(by=x_axis)
-    fig = px.line(df_sorted, x=x_axis, y=n_cols[0], template="plotly_white", markers=True)
-    st.plotly_chart(fig, use_container_width=True)
+def render_line_chart_config(df):
+    """Renders the UI for configuring a Line Chart."""
+    with st.container(border=True):
+        st.write("**1. Select Axes**")
+        plot_numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
+        # For line charts, the x-axis can be numeric or categorical (like seasons)
+        plot_x_axis_cols = df.columns.tolist()
+
+        col1, col2 = st.columns(2)
+        with col1:
+            st.selectbox("X-Axis (Time or Category):", options=plot_x_axis_cols, key='config_x_col_line')
+        with col2:
+            st.multiselect("Y-Axis (Values):", options=plot_numeric_cols, key='config_y_cols_line')
+
+        st.write("**2. Select Style**")
+        col3, col4, col5 = st.columns(3)
+        with col3:
+            st.selectbox("Color by (Optional):", options=[None] + plot_x_axis_cols, key='config_color_col_line')
+        with col4:
+            st.toggle("Show Markers", value=True, key='config_markers_line')
+        with col5:
+            st.toggle("Fill Area (Area Chart)", value=False, key='config_area_fill_line')
+
+        st.toggle("Show Trendline (for Scatter data)", value=False, key='config_trendline_line',
+                  help="Adds a regression line. Best used when X and Y are both numeric.")
+
+
+def create_line_chart_from_state(df):
+    """Plots a line chart using parameters stored in session_state."""
+    x_col = st.session_state.config_x_col_line
+    y_cols = st.session_state.config_y_cols_line
+
+    if not x_col or not y_cols:
+        st.info("Please configure the X-Axis and Y-Axis in the 'Configure Chart' tab.")
+        return
+
+    try:
+        # Sort data by x-axis for a coherent line
+        df_sorted = df.sort_values(by=x_col)
+
+        # Check for area fill option
+        area_fill = "tozeroy" if st.session_state.config_area_fill_line else None
+
+        fig = px.line(
+            df_sorted,
+            x=x_col,
+            y=y_cols,
+            color=st.session_state.config_color_col_line,
+            markers=st.session_state.config_markers_line,
+            template="plotly_white",
+            title=f"{', '.join(y_cols)} over {x_col}"
+        )
+
+        # Apply area fill if toggled
+        if area_fill:
+            fig.update_traces(fill=area_fill)
+
+        # Add trendline if toggled
+        if st.session_state.config_trendline_line:
+            # Trendlines work best on scatter plots, so we add them this way
+            # Note: This works best for a single Y-axis column
+            if len(y_cols) == 1:
+                trend_fig = px.scatter(df_sorted, x=x_col, y=y_cols[0], trendline="ols")
+                fig.add_trace(trend_fig.data[1])  # Add the trendline trace to the line chart
+            else:
+                st.warning("Trendline can only be shown for a single Y-Axis selection.")
+
+        st.plotly_chart(fig, use_container_width=True)
+
+    except Exception as e:
+        st.error(f"Failed to create line chart: {e}")
 
 
 def create_scatter_plot(df, n_cols, c_cols):
