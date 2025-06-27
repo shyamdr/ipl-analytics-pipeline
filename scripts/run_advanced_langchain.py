@@ -184,15 +184,24 @@ def summarize_results_with_ai(user_question: str, db_results: list, headers: lis
     if not db_results:
         return "The query ran successfully but returned no results."
 
-    # Convert the data to a more readable format for the prompt
     data_as_string = tabulate(db_results, headers=headers, tablefmt="psql")
 
     prompt = f"""
     You are a helpful cricket analyst. Your job is to answer the user's question in a clear, friendly, natural language sentence.
     Use the data provided below, which was retrieved from a database, to formulate your answer.
-
+    
     Original user question: "{user_question}"
-
+    
+    **1. Summary Rules (CRITICAL):**
+    - Your summary MUST be short and insightful (max 50-70 words).
+    - DO NOT list all rows from the data. The user can see the full table separately.
+    - Your goal is to synthesize the key trend, insight, or top 3-4 performers.
+    - A good summary provides context that the raw numbers don't, for example, for the 
+        user question - "give me the player and the match date for every single player's century who has scored atleast 2 centuries in their ipl career": 
+        Bad Summary : "Here are the players who have scored at least two centuries in their IPL career, player x on date d1; player y on date d2, d3; ..."
+        Good Summary(Preferred) : "While over 20 players have multiple centuries, Virat Kohli and Jos Buttler are in a class of their own, leading the pack with 7 each."
+        Okay Summary(Also acceptable) : "Here's the list of all the players who have scored at least 2 centuries in their IPL career." (The results will be separately displayed in a table to the user)
+        
     Data retrieved from database:
     {data_as_string}
 
@@ -200,7 +209,7 @@ def summarize_results_with_ai(user_question: str, db_results: list, headers: lis
     """
 
     try:
-        model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
+        model = genai.GenerativeModel('gemini-1.5-flash')
         response = model.generate_content(prompt)
         return response.text
     except Exception as e:
@@ -278,7 +287,7 @@ def run_advanced_langchain_tool(user_question: str) -> tuple[str, list, list, bo
                 logger.info("Summarizing results with AI ....")
                 final_answer = summarize_results_with_ai(user_question, results, headers)
                 success_status = True
-                logger.info(f"AI Answer:\n{final_answer}")
+                logger.info(f"AI Summary:\n{final_answer}")
             else:
                 # If the query results nothing
                 final_answer = query_execution_error_msg if query_execution_error_msg else "The query executed successfully but returned no results."
