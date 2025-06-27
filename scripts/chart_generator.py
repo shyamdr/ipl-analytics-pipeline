@@ -8,6 +8,7 @@ def initialize_session_state():
     defaults = {
         'chart_type': 'Bar Chart',
         'active_filters': {},
+        'filter_to_remove': None,
         'summarize_toggle': False,
         'group_by_cols': [],
         'config_category_col': None,
@@ -85,6 +86,13 @@ def build_chart_studio(df):
 
     # Initialize all session state variables if they don't exist
     initialize_session_state()
+
+    if st.session_state.filter_to_remove:
+        col_to_del = st.session_state.filter_to_remove
+        if col_to_del in st.session_state.active_filters:
+            del st.session_state.active_filters[col_to_del]
+        # Reset the flag so this action doesn't repeat on the next run
+        st.session_state.filter_to_remove = None
 
     # --- TOP-LEVEL CHART TYPE SELECTOR ---
     st.selectbox(
@@ -175,14 +183,28 @@ def render_filter_tab(df):
                 if st.button("Apply Filter", key=f"apply_{col_to_filter}"):
                     st.session_state.active_filters[col_to_filter] = selected_vals
                     #st.rerun()
-            # ... (add the numeric slider part here too)
+            elif pd.api.types.is_numeric_dtype(df[col_to_filter]):
+                min_val, max_val = float(df[col_to_filter].min()), float(df[col_to_filter].max())
+                # Get current filter value if it exists, otherwise use full range
+                current_val = st.session_state.active_filters.get(col_to_filter, (min_val, max_val))
+                selected_range = st.slider(
+                    f"Range for '{col_to_filter}':",
+                    min_value=min_val,
+                    max_value=max_val,
+                    value=current_val,
+                    key=f"filter_val_{col_to_filter}"
+                )
+                if st.button("Apply Filter", key=f"apply_{col_to_filter}"):
+                    st.session_state.active_filters[col_to_filter] = selected_range
 
         if st.session_state.get('active_filters'):
             st.write("**Active Filters:**")
+            st.write("double-click to remove existing filters")
             # Create a copy of items to avoid issues while iterating and deleting
             for col, val in list(st.session_state.active_filters.items()):
                 if st.button(f"{col}: {str(val)[:30]}... ❌", key=f"del_{col}"):
                     st.session_state.filter_to_remove = col
+                    #del st.session_state.active_filters[col]
                     #st.rerun()
 
 
