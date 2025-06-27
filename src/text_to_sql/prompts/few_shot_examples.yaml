@@ -17,7 +17,7 @@
     ),
     CalculatedAverages AS (
       SELECT
-        p.name,
+        p.first_last_name, # Use this field always to display the player names for the final output
         s.total_runs,
         (s.total_runs::FLOAT / NULLIF(s.total_balls_faced, 0)) * 100 AS strike_rate,
         (s.total_runs::FLOAT / NULLIF(s.total_outs, 0)) AS batting_average
@@ -48,7 +48,7 @@
   question: "Which batter hit the most sixes in the 2024 season of IPL?"
   sql: |
     SELECT
-      p.name AS batter_name,
+      p.first_last_name AS batter_name, # Use this field always to display the player names for the final output
       COUNT(*) AS sixes_count
     FROM Deliveries AS d
     JOIN Players AS p
@@ -86,8 +86,8 @@
         SUM(d.runs_batter) >= 300
     )
     SELECT
-      p1.name AS player1,
-      p2.name AS player2,
+      p1.first_last_name AS player1, # Use this field always to display the player names for the final output
+      p2.first_last_name AS player2, # Use this field always to display the player names for the final output
       ps.partnership_runs,
       ROUND((ps.partnership_runs * 6.0 / NULLIF(ps.legitimate_balls, 0)), 2) AS run_rate
     FROM PartnershipStats ps
@@ -127,7 +127,7 @@
     )
     SELECT
     	-- If previous and previous-to-previous wicket occured in consecutive ball_numbers then consider it as a hat trick
-    	p.name AS bowler_name,
+    	p.first_last_name AS bowler_name, # Use this field always to display the player names for the final output
     	COUNT(ht.bowler_id) AS hat_tricks_count
     FROM HatrickCandidates ht
     JOIN Players p ON ht.bowler_id = p.identifier
