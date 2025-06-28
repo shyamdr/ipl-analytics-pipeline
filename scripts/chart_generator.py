@@ -52,6 +52,14 @@ def initialize_session_state():
         'config_nbins_hist': 30,  # Default to 30 bins
         'config_barmode_hist': 'overlay',  # Default to overlay
         'config_hist_type': 'Histogram',
+        # --- Box Plot ---
+        'config_x_col_box': None,  # For the categorical axis
+        'config_y_col_box': None,  # For the numeric axis
+        'config_color_col_box': None,  # To split by color
+        'config_plot_type_box': 'Box',  # To switch between Box and Violin
+        'config_points_box': False,  # To show/hide all data points
+        'box_plot_summarize_toggle': False,
+        'box_plot_group_by_cols': [],
         # A dictionary to hold aggregation function choices for each chart
         'agg_configs': {}  # <-- ADD
     }
@@ -126,7 +134,8 @@ def build_chart_studio(df):
     # --- TOP-LEVEL CHART TYPE SELECTOR ---
     st.selectbox(
         "Choose a chart type to build:",
-        options=["Bar Chart", "Line Chart", "Donut Chart", "Sunburst Chart", "Nightingale Rose Chart", "Scatter Plot", "Histogram"],
+        options=["Bar Chart", "Line Chart", "Donut Chart", "Sunburst Chart", "Nightingale Rose Chart", "Scatter Plot",
+                 "Histogram", "Box Plot"],
         key='chart_type'  # Bind this to session state
     )
 
@@ -156,6 +165,8 @@ def build_chart_studio(df):
             render_scatter_plot_config(df_clean)
         elif st.session_state.chart_type == 'Histogram':
             render_histogram_config(df_clean)
+        elif st.session_state.chart_type == 'Box Plot':
+            render_box_plot_config(df_clean)
 
     with tab_summary:
         # Pass df_clean so the Group By dropdown has all categorical columns
@@ -182,6 +193,8 @@ def build_chart_studio(df):
         create_scatter_plot_from_state(df_processed)
     elif st.session_state.chart_type == 'Histogram':
         create_histogram_from_state(df_processed)
+    elif st.session_state.chart_type == 'Box Plot':
+        create_box_plot_from_state(df_processed)
 
 def process_data(df):
     """
@@ -231,6 +244,14 @@ def process_data(df):
             ]
             # The color column is the categorical axis we need to preserve
             axis_cols = [st.session_state.get('config_color_col_scatter')]
+        elif active_chart == 'Box Plot':
+            # The y-axis is the numeric value to aggregate
+            value_cols = [st.session_state.get('config_y_col_box')]
+            # The x-axis and color are the categorical axes to preserve
+            axis_cols = [
+                st.session_state.get('config_x_col_box'),
+                st.session_state.get('config_color_col_box')
+            ]
 
         # Filter out None values
         axis_cols = [col for col in axis_cols if col]
@@ -731,6 +752,77 @@ def create_histogram_from_state(df):
 
     except Exception as e:
         st.error(f"Failed to create histogram: {e}")
+
+def render_box_plot_config(df):
+    """Renders the UI for configuring a Box or Violin Plot."""
+    with st.container(border=True):
+        st.write("**1. Select Axes**")
+        numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
+        categorical_cols = df.select_dtypes(include=['object', 'int64']).columns.tolist()
+
+        if not numeric_cols:
+            st.warning("This chart requires at least one numeric column.")
+            return
+
+        col1, col2 = st.columns(2)
+        with col1:
+            st.selectbox("Value Axis (Numeric):", options=numeric_cols, key='config_y_col_box')
+        with col2:
+            st.selectbox("Category Axis (Optional):", options=[None] + categorical_cols, key='config_x_col_box',
+                         help="Split the distribution by a category.")
+
+        st.write("**2. Select Style**")
+        col3, col4, col5 = st.columns(3)
+        with col3:
+            st.selectbox("Color by (Optional):", options=[None] + categorical_cols, key='config_color_col_box')
+        with col4:
+            st.radio("Plot Type:", options=['Box', 'Violin'], key='config_plot_type_box', horizontal=True)
+        with col5:
+            st.toggle("Show all data points", key='config_points_box',
+                      help="Overlays all individual points on the plot.")
+
+def create_box_plot_from_state(df):
+    """Plots a Box or Violin chart using parameters stored in session_state."""
+    y_col = st.session_state.config_y_col_box
+
+    if not y_col:
+        st.info("Please select a 'Value Axis' in the 'Configure Chart' tab.")
+        return
+
+    try:
+        plot_type = st.session_state.config_plot_type_box
+        points = "all" if st.session_state.config_points_box else False
+        title = f"{plot_type} Plot of {y_col}"
+        if st.session_state.config_x_col_box:
+            title += f" by {st.session_state.config_x_col_box}"
+
+        # Dynamically choose the plotting function
+        if plot_type == 'Box':
+            fig = px.box(
+                df,
+                y=y_col,
+                x=st.session_state.config_x_col_box,
+                color=st.session_state.config_color_col_box,
+                points=points,
+                template="plotly_white",
+                title=title
+            )
+        else:  # Violin
+            fig = px.violin(
+                df,
+                y=y_col,
+                x=st.session_state.config_x_col_box,
+                color=st.session_state.config_color_col_box,
+                points=points,
+                box=True,  # Show a mini box plot inside the violin
+                template="plotly_white",
+                title=title
+            )
+
+        st.plotly_chart(fig, use_container_width=True)
+
+    except Exception as e:
+        st.error(f"Failed to create {plot_type.lower()} plot: {e}")
 
 # ----- UNUSED -----
 def create_scatter_plot(df, n_cols, c_cols):
