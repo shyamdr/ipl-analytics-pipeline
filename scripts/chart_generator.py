@@ -46,6 +46,12 @@ def initialize_session_state():
         'config_trendline_scatter': 'None',  # Use a string for trendline options
         'scatter_plot_summarize_toggle': False,
         'scatter_plot_group_by_cols': [],
+        # --- Histogram ---
+        'config_x_col_hist': None,
+        'config_color_col_hist': None,
+        'config_nbins_hist': 30,  # Default to 30 bins
+        'config_barmode_hist': 'overlay',  # Default to overlay
+        'config_hist_type': 'Histogram',
         # A dictionary to hold aggregation function choices for each chart
         'agg_configs': {}  # <-- ADD
     }
@@ -120,7 +126,7 @@ def build_chart_studio(df):
     # --- TOP-LEVEL CHART TYPE SELECTOR ---
     st.selectbox(
         "Choose a chart type to build:",
-        options=["Bar Chart", "Line Chart", "Donut Chart", "Sunburst Chart", "Nightingale Rose Chart", "Scatter Plot"],
+        options=["Bar Chart", "Line Chart", "Donut Chart", "Sunburst Chart", "Nightingale Rose Chart", "Scatter Plot", "Histogram"],
         key='chart_type'  # Bind this to session state
     )
 
@@ -148,6 +154,8 @@ def build_chart_studio(df):
             render_nightingale_chart_config(df_clean)
         elif st.session_state.chart_type == 'Scatter Plot':
             render_scatter_plot_config(df_clean)
+        elif st.session_state.chart_type == 'Histogram':
+            render_histogram_config(df_clean)
 
     with tab_summary:
         # Pass df_clean so the Group By dropdown has all categorical columns
@@ -172,6 +180,8 @@ def build_chart_studio(df):
         create_nightingale_chart_from_state(df_processed)
     elif st.session_state.chart_type == 'Scatter Plot':
         create_scatter_plot_from_state(df_processed)
+    elif st.session_state.chart_type == 'Histogram':
+        create_histogram_from_state(df_processed)
 
 def process_data(df):
     """
@@ -295,6 +305,10 @@ def render_summary_tab(df):
     """Renders a summary UI that is specific to the selected chart type."""
     with st.container(border=True):
         active_chart = st.session_state.chart_type
+
+        if active_chart == 'Histogram':
+            st.info("Summarization (Group By) is not applicable for a Histogram, as it analyzes the raw data distribution.")
+            return
 
         # Define keys based on the active chart
         toggle_key = f"{active_chart.lower().replace(' ', '_')}_summarize_toggle"
@@ -631,6 +645,92 @@ def create_scatter_plot_from_state(df):
 
     except Exception as e:
         st.error(f"Failed to create scatter plot: {e}")
+
+def render_histogram_config(df):
+    """Renders the UI for configuring a Histogram."""
+    with st.container(border=True):
+        st.write("**1. Select Data**")
+        numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
+        categorical_cols = df.select_dtypes(include=['object', 'int64']).columns.tolist()
+
+        if not numeric_cols:
+            st.warning("Histograms require at least one numeric column.")
+            return
+
+        col1, col2 = st.columns(2)
+        with col1:
+            st.selectbox("Column to Analyze:", options=numeric_cols, key='config_x_col_hist')
+        with col2:
+            st.selectbox("Color by (Optional):", options=[None] + categorical_cols, key='config_color_col_hist',
+                         help="Shows separate distributions for each category.")
+
+        st.write("**2. Select Plot Type & Style**") # This replaces the old "Select Style" header
+        st.radio(
+            "Plot Type:",
+            options=["Histogram", "Density (KDE)", "Cumulative (ECDF)"],
+            key='config_hist_type',
+            horizontal=True
+        )
+
+        if st.session_state.config_hist_type == 'Histogram':
+            col3, col4 = st.columns(2)
+            with col3:
+                st.slider("Number of Bins:", min_value=5, max_value=100, key='config_nbins_hist',
+                          help="Controls the granularity of the distribution.")
+            with col4:
+                if st.session_state.config_color_col_hist:  # Barmode only applies when color is used
+                    st.radio("Bar Mode:", options=['overlay', 'stack'], key='config_barmode_hist',
+                             help="Overlay shows transparent bars, Stack adds them up.")
+
+def create_histogram_from_state(df):
+    """Plots a histogram using parameters stored in session_state."""
+    x_col = st.session_state.config_x_col_hist
+    plot_type = st.session_state.config_hist_type
+
+    if not x_col:
+        st.info("Please select a column to analyze in the 'Configure Chart' tab.")
+        return
+
+    try:
+
+        fig = None
+        title = f"{plot_type} of {x_col}"
+        color_col = st.session_state.config_color_col_hist
+
+        if plot_type == "Histogram":
+            # Barmode is only used if a color column is selected
+            barmode = st.session_state.config_barmode_hist if st.session_state.config_color_col_hist else 'relative'
+
+            fig = px.histogram(
+                df,
+                x=x_col,
+                color=st.session_state.config_color_col_hist,
+                nbins=st.session_state.config_nbins_hist,
+                barmode=barmode,
+                template="plotly_white",
+                title=f"Distribution of {x_col}"
+            )
+            # Make overlayed histograms transparent so you can see both
+            if barmode == 'overlay':
+                fig.update_traces(opacity=0.75)
+        elif plot_type == "Density (KDE)":
+            # For KDE, we use density_heatmap and can show marginal histograms
+            fig = px.density_heatmap(
+                df, x=x_col, y=color_col,
+                marginal_x="histogram", marginal_y="histogram" if color_col else None,
+                template="plotly_white", title=title
+            )
+
+        elif plot_type == "Cumulative (ECDF)":
+            fig = px.ecdf(
+                df, x=x_col, color=color_col,
+                template="plotly_white", title=title
+            )
+        if fig:
+            st.plotly_chart(fig, use_container_width=True)
+
+    except Exception as e:
+        st.error(f"Failed to create histogram: {e}")
 
 # ----- UNUSED -----
 def create_scatter_plot(df, n_cols, c_cols):
