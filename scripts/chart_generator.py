@@ -330,7 +330,7 @@ def render_summary_tab(df):
                 value_cols = [col for col in potential_cols if col]
 
             with col2:
-                st.multiselect("Group By:", options=df.select_dtypes(include=['object']).columns, key=groupby_key)
+                st.multiselect("Group By:", options=df.select_dtypes(include=['object', 'int64']).columns, key=groupby_key)
 
             if st.session_state[groupby_key] and value_cols:
                 unique_value_cols = list(dict.fromkeys(value_cols))
@@ -347,7 +347,7 @@ def render_bar_chart_config(df):
     with st.container(border=True):
         st.write("**1. Select Axes**")
         plot_numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
-        plot_categorical_cols = df.select_dtypes(include=['object']).columns.tolist()
+        plot_categorical_cols = df.select_dtypes(include=['object', 'int64']).columns.tolist()
 
         col1, col2 = st.columns(2)
         with col1:
@@ -473,7 +473,7 @@ def render_donut_chart_config(df):
     with st.container(border=True):
         st.write("**Select Data for Donut Chart**")
         numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
-        categorical_cols = df.select_dtypes(include=['object']).columns.tolist()
+        categorical_cols = df.select_dtypes(include=['object', 'int64']).columns.tolist()
 
         if not numeric_cols or not categorical_cols:
             st.warning("Donut Charts require at least one numeric and one categorical column.")
@@ -508,7 +508,7 @@ def render_sunburst_chart_config(df):
     with st.container(border=True):
         st.write("**Select Data for Sunburst Chart**")
         numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
-        categorical_cols = df.select_dtypes(include=['object']).columns.tolist()
+        categorical_cols = df.select_dtypes(include=['object', 'int64']).columns.tolist()
 
         if not numeric_cols or len(categorical_cols) < 1:
             st.warning("Sunburst Charts require at least one categorical (for path) and one numeric column (for values).")
@@ -538,7 +538,7 @@ def render_nightingale_chart_config(df):
     with st.container(border=True):
         st.write("**Select Data for Nightingale Rose Chart**")
         numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
-        categorical_cols = df.select_dtypes(include=['object']).columns.tolist()
+        categorical_cols = df.select_dtypes(include=['object', 'int64']).columns.tolist()
 
         if not numeric_cols or not categorical_cols:
             st.warning("Nightingale Charts require one categorical column (for slices) and one numeric column (for radius).")
@@ -575,7 +575,7 @@ def render_scatter_plot_config(df):
     with st.container(border=True):
         st.write("**1. Select Axes & Dimensions**")
         numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
-        categorical_cols = df.select_dtypes(include=['object']).columns.tolist()
+        categorical_cols = df.select_dtypes(include=['object', 'int64']).columns.tolist()
 
         if len(numeric_cols) < 2:
             st.warning("Scatter Plots require at least two numeric columns.")
