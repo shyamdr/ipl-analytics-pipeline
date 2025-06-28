@@ -3,8 +3,6 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 
-
-# In initialize_session_state()
 def initialize_session_state():
     """Initializes session state variables if they don't exist."""
     defaults = {
@@ -12,19 +10,14 @@ def initialize_session_state():
         'active_filters': {},
         'filter_to_remove': None,
 
-        # REMOVE a few old keys
-        # 'summarize_toggle': False, <-- REMOVE
-        # 'group_by_cols': [],      <-- REMOVE
-
         # --- Bar Chart Keys ---
         'config_category_col': None,
         'config_value_cols': [],
         'config_color_col': None,
         'config_orientation': 'Horizontal',
         'config_barmode': 'group',
-        'bar_chart_summarize_toggle': False,  # <-- ADD
-        'bar_chart_group_by_cols': [],  # <-- ADD
-
+        'bar_chart_summarize_toggle': False,
+        'bar_chart_group_by_cols': [],
         # --- Line Chart Keys ---
         'config_x_col_line': None,
         'config_y_cols_line': [],
@@ -32,23 +25,19 @@ def initialize_session_state():
         'config_markers_line': True,
         'config_area_fill_line': False,
         'config_trendline_line': False,
-        'line_chart_summarize_toggle': False,  # <-- ADD
-        'line_chart_group_by_cols': [],  # <-- ADD
-
-        # --- Donut Chart --- (Doesn't need summarization)
+        'line_chart_summarize_toggle': False,
+        'line_chart_group_by_cols': [],
+        # --- Donut Chart ---
         'config_names_col_donut': None,
         'config_values_col_donut': None,
-
-        # --- Sunburst Chart --- (Doesn't need summarization)
+        # --- Sunburst Chart ---
         'config_path_sunburst': [],
         'config_values_sunburst': None,
-
         # --- Nightingale Chart ---
         'config_theta_nightingale': None,
         'config_r_nightingale': None,
-        'nightingale_rose_chart_summarize_toggle': False,  # <-- ADD
-        'nightingale_rose_chart_group_by_cols': [],  # <-- ADD
-
+        'nightingale_rose_chart_summarize_toggle': False,
+        'nightingale_rose_chart_group_by_cols': [],
         # A dictionary to hold aggregation function choices for each chart
         'agg_configs': {}  # <-- ADD
     }
@@ -56,11 +45,6 @@ def initialize_session_state():
         if key not in st.session_state:
             st.session_state[key] = value
 
-
-# ==============================================================================
-# 1. CHART ELIGIBILITY CHECKER
-# This function checks the dataframe and returns a list of all possible charts.
-# ==============================================================================
 def get_eligible_charts(df):
     """
     Analyzes the DataFrame's structure to determine which chart types are possible.
@@ -81,16 +65,13 @@ def get_eligible_charts(df):
         "Scatter Plot": num_numeric >= 2,
         "Pie Chart": num_numeric == 1 and num_categorical == 1,
         "Bubble Chart": num_numeric >= 3,
-
         # Distribution Charts
         "Histogram": num_numeric >= 1,
         "Box Plot": num_numeric >= 1,
         "Violin Plot": num_numeric >= 1,
-
         # Hierarchical / Part-of-a-Whole Charts
         "Treemap": num_numeric == 1 and num_categorical >= 1,
         "Sunburst Chart": num_numeric == 1 and num_categorical >= 1,
-
         # Relational / Flow Charts
         "Heatmap": num_numeric == 1 and num_categorical >= 2,
         "Radar Chart": num_numeric >= 3 and num_categorical >= 1,  # Needs multiple metrics to compare
@@ -103,7 +84,6 @@ def get_eligible_charts(df):
             eligible_charts.append(chart)
 
     return sorted(eligible_charts), numeric_cols, categorical_cols
-
 
 def build_chart_studio(df):
     """
@@ -163,7 +143,6 @@ def build_chart_studio(df):
         # Pass df_clean so the Group By dropdown has all categorical columns
         render_summary_tab(df_clean)
 
-        # --- PROCESS THE DATA *AFTER* ALL UI WIDGETS HAVE BEEN RENDERED ---
     # This ensures we use the most up-to-date selections from session_state
     df_processed = process_data(df_clean)
 
@@ -182,10 +161,6 @@ def build_chart_studio(df):
     elif st.session_state.chart_type == 'Nightingale Rose Chart':
         create_nightingale_chart_from_state(df_processed)
 
-
-# In scripts/chart_generator.py
-# Replace your entire process_data function with this one.
-
 def process_data(df):
     """
     Applies filtering and aggregation using chart-specific session state keys.
@@ -193,7 +168,7 @@ def process_data(df):
     """
     df_processed = df.copy()
 
-    # 1. Apply active filters (This part remains the same)
+    # 1. Apply active filters
     for col, val in st.session_state.get('active_filters', {}).items():
         if col in df_processed.columns:
             if df_processed[col].dtype == 'object':
@@ -210,9 +185,8 @@ def process_data(df):
 
         group_by_cols = st.session_state[groupby_key]
 
-        # --- NEW LOGIC: Identify ALL columns needed for the final plot ---
         value_cols = []
-        axis_cols = []  # Will hold non-numeric axes like x-axis for line charts
+        axis_cols = []
         color_col = None
 
         if active_chart == 'Bar Chart':
@@ -245,16 +219,11 @@ def process_data(df):
                 agg_func = st.session_state.get(f"agg_{active_chart}_{col}", 'sum').lower()
                 agg_functions[col] = agg_func
 
-            # --- NEW: Ensure axis columns that are NOT being grouped by are preserved ---
-            # We do this by adding them to the groupby and taking the 'first' value.
             for col in axis_cols:
                 if col not in group_by_cols and col not in agg_functions:
                     agg_functions[col] = 'first'
 
-                    # The columns needed for the operation are the group keys + the keys in the agg dict
             cols_to_process = group_by_cols + list(agg_functions.keys())
-
-            # Ensure no duplicates and all columns exist in the dataframe
             cols_to_process = [c for c in list(dict.fromkeys(cols_to_process)) if c in df_processed.columns]
 
             df_processed = df_processed[cols_to_process].groupby(group_by_cols).agg(agg_functions).reset_index()
@@ -265,7 +234,6 @@ def process_data(df):
 
     return df_processed
 
-
 def render_filter_tab(df):
     """Renders the UI for the Filter Data tab."""
     with st.container(border=True):
@@ -274,14 +242,12 @@ def render_filter_tab(df):
                                      key="col_filter_select")
 
         if col_to_filter:
-            # Filter definition UI... (This logic remains the same as before)
             if df[col_to_filter].dtype == 'object':
                 unique_vals = df[col_to_filter].unique()
                 selected_vals = st.multiselect(f"Values for '{col_to_filter}':", options=unique_vals,
                                                key=f"filter_val_{col_to_filter}")
                 if st.button("Apply Filter", key=f"apply_{col_to_filter}"):
                     st.session_state.active_filters[col_to_filter] = selected_vals
-                    #st.rerun()
             elif pd.api.types.is_numeric_dtype(df[col_to_filter]):
                 min_val, max_val = float(df[col_to_filter].min()), float(df[col_to_filter].max())
                 # Get current filter value if it exists, otherwise use full range
@@ -303,12 +269,6 @@ def render_filter_tab(df):
             for col, val in list(st.session_state.active_filters.items()):
                 if st.button(f"{col}: {str(val)[:30]}... ❌", key=f"del_{col}"):
                     st.session_state.filter_to_remove = col
-                    #del st.session_state.active_filters[col]
-                    #st.rerun()
-
-
-# In scripts/chart_generator.py
-# Replace the render_summary_tab function with this one.
 
 def render_summary_tab(df):
     """Renders a summary UI that is specific to the selected chart type."""
@@ -351,7 +311,6 @@ def render_summary_tab(df):
                         st.selectbox(f"Agg for '{col}':", options=['sum', 'mean', 'max', 'min', 'count'],
                                      key=f"agg_{active_chart}_{col}")
 
-
 def render_bar_chart_config(df):
     """Renders the UI for configuring a Bar Chart."""
     with st.container(border=True):
@@ -368,6 +327,7 @@ def render_bar_chart_config(df):
         st.write("**2. Select Style**")
         col3, col4, col5 = st.columns(3)
         with col3:
+            # Modified version - Select Styles column changes based on the group by field
             summarize_is_on = st.session_state.get('bar_chart_summarize_toggle', False)
             group_by_cols = st.session_state.get('bar_chart_group_by_cols', [])
 
@@ -386,7 +346,6 @@ def render_bar_chart_config(df):
         with col5:
             st.radio("Bar Mode:", ['group', 'stack'], horizontal=True, key='config_barmode')
 
-
 def create_bar_chart_from_state(df):
     """Plots a bar chart using parameters stored in session_state."""
     # Retrieve all params from session state
@@ -397,8 +356,6 @@ def create_bar_chart_from_state(df):
         st.info("Please configure the chart axes in the 'Configure Chart' tab.")
         return
 
-    # ... The rest of your plotting logic from px.bar onwards ...
-    # This function would be very similar to the plotting part of the old build_bar_chart
     try:
         df_sorted = df.sort_values(by=value_cols[0], ascending=(st.session_state.config_orientation == "Horizontal"))
         x_axis, y_axis = (category_col, value_cols) if st.session_state.config_orientation == "Vertical" else (
@@ -411,7 +368,6 @@ def create_bar_chart_from_state(df):
         st.plotly_chart(fig, use_container_width=True)
     except Exception as e:
         st.error(f"Failed to create chart: {e}")
-
 
 def render_line_chart_config(df):
     """Renders the UI for configuring a Line Chart."""
@@ -439,7 +395,6 @@ def render_line_chart_config(df):
         st.toggle("Show Trendline (for Scatter data)", value=False, key='config_trendline_line',
                   help="Adds a regression line. Best used when X and Y are both numeric.")
 
-
 def create_line_chart_from_state(df):
     """Plots a line chart using parameters stored in session_state."""
     x_col = st.session_state.config_x_col_line
@@ -450,7 +405,6 @@ def create_line_chart_from_state(df):
         return
 
     try:
-        # Sort data by x-axis for a coherent line
         df_sorted = df.sort_values(by=x_col)
 
         # Check for area fill option
@@ -466,11 +420,9 @@ def create_line_chart_from_state(df):
             title=f"{', '.join(y_cols)} over {x_col}"
         )
 
-        # Apply area fill if toggled
         if area_fill:
             fig.update_traces(fill=area_fill)
 
-        # Add trendline if toggled
         if st.session_state.config_trendline_line:
             # Trendlines work best on scatter plots, so we add them this way
             # Note: This works best for a single Y-axis column
@@ -484,7 +436,6 @@ def create_line_chart_from_state(df):
 
     except Exception as e:
         st.error(f"Failed to create line chart: {e}")
-
 
 def render_donut_chart_config(df):
     """Renders the UI for configuring a Donut Chart."""
@@ -502,7 +453,6 @@ def render_donut_chart_config(df):
             st.selectbox("Labels (Slices):", options=categorical_cols, key='config_names_col_donut')
         with col2:
             st.selectbox("Values (Size of Slices):", options=numeric_cols, key='config_values_col_donut')
-
 
 def create_donut_chart_from_state(df):
     """Plots a donut chart using parameters stored in session_state."""
@@ -522,7 +472,6 @@ def create_donut_chart_from_state(df):
     except Exception as e:
         st.error(f"Failed to create donut chart: {e}")
 
-
 def render_sunburst_chart_config(df):
     """Renders the UI for configuring a Sunburst Chart."""
     with st.container(border=True):
@@ -538,7 +487,6 @@ def render_sunburst_chart_config(df):
                        help="Select one or more categories to define the hierarchy. E.g., [team_name, player_name]")
         st.selectbox("Values (Size of Slices):", options=numeric_cols, key='config_values_sunburst')
 
-
 def create_sunburst_chart_from_state(df):
     """Plots a sunburst chart using parameters stored in session_state."""
     path_cols = st.session_state.config_path_sunburst
@@ -553,7 +501,6 @@ def create_sunburst_chart_from_state(df):
         st.plotly_chart(fig, use_container_width=True)
     except Exception as e:
         st.error(f"Failed to create sunburst chart: {e}")
-
 
 def render_nightingale_chart_config(df):
     """Renders the UI for configuring a Nightingale Rose Chart."""
@@ -573,7 +520,6 @@ def render_nightingale_chart_config(df):
         with col2:
             st.selectbox("Values (Radius of Slices):", options=numeric_cols, key='config_r_nightingale',
                          help="The value in this column determines how far each slice extends from the center.")
-
 
 def create_nightingale_chart_from_state(df):
     """Plots a Nightingale Rose chart using parameters stored in session_state."""
