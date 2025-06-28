@@ -38,6 +38,14 @@ def initialize_session_state():
         'config_r_nightingale': None,
         'nightingale_rose_chart_summarize_toggle': False,
         'nightingale_rose_chart_group_by_cols': [],
+        # --- Scatter Plot ---
+        'config_x_col_scatter': None,
+        'config_y_col_scatter': None,
+        'config_color_col_scatter': None,
+        'config_size_col_scatter': None,  # For the Bubble Chart variant
+        'config_trendline_scatter': 'None',  # Use a string for trendline options
+        'scatter_plot_summarize_toggle': False,
+        'scatter_plot_group_by_cols': [],
         # A dictionary to hold aggregation function choices for each chart
         'agg_configs': {}  # <-- ADD
     }
@@ -112,7 +120,7 @@ def build_chart_studio(df):
     # --- TOP-LEVEL CHART TYPE SELECTOR ---
     st.selectbox(
         "Choose a chart type to build:",
-        options=["Bar Chart", "Line Chart", "Donut Chart", "Sunburst Chart", "Nightingale Rose Chart"],
+        options=["Bar Chart", "Line Chart", "Donut Chart", "Sunburst Chart", "Nightingale Rose Chart", "Scatter Plot"],
         key='chart_type'  # Bind this to session state
     )
 
@@ -138,6 +146,8 @@ def build_chart_studio(df):
             render_sunburst_chart_config(df_clean)
         elif st.session_state.chart_type == 'Nightingale Rose Chart':
             render_nightingale_chart_config(df_clean)
+        elif st.session_state.chart_type == 'Scatter Plot':
+            render_scatter_plot_config(df_clean)
 
     with tab_summary:
         # Pass df_clean so the Group By dropdown has all categorical columns
@@ -160,6 +170,8 @@ def build_chart_studio(df):
         create_sunburst_chart_from_state(df_processed)
     elif st.session_state.chart_type == 'Nightingale Rose Chart':
         create_nightingale_chart_from_state(df_processed)
+    elif st.session_state.chart_type == 'Scatter Plot':
+        create_scatter_plot_from_state(df_processed)
 
 def process_data(df):
     """
@@ -200,6 +212,15 @@ def process_data(df):
         elif active_chart == 'Nightingale Rose Chart':
             value_cols = [st.session_state.get('config_r_nightingale')]
             axis_cols = [st.session_state.get('config_theta_nightingale')]
+        elif active_chart == 'Scatter Plot':
+            # For a scatter plot, all axes (x, y, and size) can be numeric values that need aggregation
+            value_cols = [
+                st.session_state.get('config_x_col_scatter'),
+                st.session_state.get('config_y_col_scatter'),
+                st.session_state.get('config_size_col_scatter') # Add the size column
+            ]
+            # The color column is the categorical axis we need to preserve
+            axis_cols = [st.session_state.get('config_color_col_scatter')]
 
         # Filter out None values
         axis_cols = [col for col in axis_cols if col]
@@ -298,14 +319,24 @@ def render_summary_tab(df):
             elif active_chart == 'Nightingale Rose Chart':
                 if st.session_state.config_r_nightingale:
                     value_cols = [st.session_state.config_r_nightingale]
+            elif active_chart == 'Scatter Plot':
+                # For a scatter plot, all axes (x, y, and size) can be aggregated
+                potential_cols = [
+                    st.session_state.get('config_x_col_scatter'),
+                    st.session_state.get('config_y_col_scatter'),
+                    st.session_state.get('config_size_col_scatter')
+                ]
+                # Filter out any that are not selected (i.e., are None)
+                value_cols = [col for col in potential_cols if col]
 
             with col2:
                 st.multiselect("Group By:", options=df.select_dtypes(include=['object']).columns, key=groupby_key)
 
             if st.session_state[groupby_key] and value_cols:
+                unique_value_cols = list(dict.fromkeys(value_cols))
                 st.write("**Define Aggregation for Selected Value Columns:**")
-                agg_cols_ui = st.columns(len(value_cols))
-                for i, col in enumerate(value_cols):
+                agg_cols_ui = st.columns(len(unique_value_cols))
+                for i, col in enumerate(unique_value_cols):
                     with agg_cols_ui[i]:
                         # Use a unique key for each agg selectbox
                         st.selectbox(f"Agg for '{col}':", options=['sum', 'mean', 'max', 'min', 'count'],
@@ -362,7 +393,7 @@ def create_bar_chart_from_state(df):
         value_cols, category_col)
 
         fig = px.bar(df_sorted, x=x_axis, y=y_axis, color=st.session_state.config_color_col,
-                     title=f"{', '.join(value_cols)} by {category_col}", template="plotly_white",
+                     title=f"{', '.join(value_cols)} by {category_col}", template="plotly_dark",
                      barmode=st.session_state.config_barmode,
                      orientation='v' if st.session_state.config_orientation == 'Vertical' else 'h')
         st.plotly_chart(fig, use_container_width=True)
@@ -416,7 +447,7 @@ def create_line_chart_from_state(df):
             y=y_cols,
             color=st.session_state.config_color_col_line,
             markers=st.session_state.config_markers_line,
-            template="plotly_white",
+            template="plotly_dark",
             title=f"{', '.join(y_cols)} over {x_col}"
         )
 
@@ -465,7 +496,7 @@ def create_donut_chart_from_state(df):
     try:
         df_top = df.nlargest(12, values_col)
         fig = px.pie(df_top, names=names_col, values=values_col, hole=0.4,  # Default hole for donut
-                     template="plotly_white", title=f"Distribution of {values_col} by {names_col}")
+                     template="plotly_dark", title=f"Distribution of {values_col} by {names_col}")
         fig.update_traces(textposition='inside', textinfo='percent+label',
                           pull=[0.05 if i == 0 else 0 for i in range(len(df_top))])
         st.plotly_chart(fig, use_container_width=True)
@@ -497,7 +528,7 @@ def create_sunburst_chart_from_state(df):
         return
     try:
         fig = px.sunburst(df, path=path_cols, values=values_col,
-                          template="plotly_white", title=f"Breakdown of {values_col} by {', '.join(path_cols)}")
+                          template="plotly_dark", title=f"Breakdown of {values_col} by {', '.join(path_cols)}")
         st.plotly_chart(fig, use_container_width=True)
     except Exception as e:
         st.error(f"Failed to create sunburst chart: {e}")
@@ -532,25 +563,87 @@ def create_nightingale_chart_from_state(df):
     try:
         # Using plotly.express with line_polar
         fig = px.bar_polar(df, r=r_col, theta=theta_col,
-                           template="plotly_white",
+                           template="plotly_dark",
                            color=r_col, # Color bars by their value for a nice effect
                            title=f"Distribution of {r_col} by {theta_col}")
         st.plotly_chart(fig, use_container_width=True)
     except Exception as e:
         st.error(f"Failed to create Nightingale Rose chart: {e}")
 
+def render_scatter_plot_config(df):
+    """Renders the UI for configuring a Scatter Plot."""
+    with st.container(border=True):
+        st.write("**1. Select Axes & Dimensions**")
+        numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
+        categorical_cols = df.select_dtypes(include=['object']).columns.tolist()
 
+        if len(numeric_cols) < 2:
+            st.warning("Scatter Plots require at least two numeric columns.")
+            return
+
+        col1, col2 = st.columns(2)
+        with col1:
+            st.selectbox("X-Axis (Numeric):", options=numeric_cols, key='config_x_col_scatter')
+        with col2:
+            st.selectbox("Y-Axis (Numeric):", options=numeric_cols, key='config_y_col_scatter',
+                         index=min(1, len(numeric_cols) - 1))
+
+        st.write("**2. Select Style (Optional)**")
+        col3, col4 = st.columns(2)
+        with col3:
+            # This follows our smart UI pattern for colors
+            summarize_is_on = st.session_state.get('scatter_plot_summarize_toggle', False)
+            group_by_cols = st.session_state.get('scatter_plot_group_by_cols', [])
+            valid_color_options = group_by_cols if summarize_is_on and group_by_cols else categorical_cols
+            st.selectbox("Color by (Category):", options=[None] + valid_color_options, key='config_color_col_scatter')
+        with col4:
+            # This turns the scatter into a Bubble Chart
+            st.selectbox("Size by (Numeric):", options=[None] + numeric_cols, key='config_size_col_scatter',
+                         help="Turns the chart into a Bubble Chart.")
+
+        st.selectbox("Add Trendline:", options=["None", "ols", "lowess"], key='config_trendline_scatter',
+                     help="Draws a regression line. 'ols' is linear, 'lowess' is a smoothed line.")
+
+def create_scatter_plot_from_state(df):
+    """Plots a scatter chart using parameters stored in session_state."""
+    x_col = st.session_state.config_x_col_scatter
+    y_col = st.session_state.config_y_col_scatter
+
+    if not x_col or not y_col:
+        st.info("Please configure the X-Axis and Y-Axis in the 'Configure Chart' tab.")
+        return
+
+    try:
+        # The trendline parameter expects None if the string is "None"
+        trendline = st.session_state.config_trendline_scatter if st.session_state.config_trendline_scatter != "None" else None
+
+        fig = px.scatter(
+            df,
+            x=x_col,
+            y=y_col,
+            color=st.session_state.config_color_col_scatter,
+            size=st.session_state.config_size_col_scatter,
+            trendline=trendline,
+            template="plotly_dark",
+            title=f"{y_col} vs. {x_col}"
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    except Exception as e:
+        st.error(f"Failed to create scatter plot: {e}")
+
+# ----- UNUSED -----
 def create_scatter_plot(df, n_cols, c_cols):
     st.write(f"#### Scatter Plot: {n_cols[1]} vs. {n_cols[0]}")
     fig = px.scatter(df, x=n_cols[0], y=n_cols[1], hover_name=c_cols[0] if c_cols else None,
-                     color=c_cols[0] if c_cols else None, template="plotly_white")
+                     color=c_cols[0] if c_cols else None, template="plotly_dark")
     st.plotly_chart(fig, use_container_width=True)
 
 
 def create_pie_chart(df, n_cols, c_cols):
     st.write(f"#### Pie Chart: Distribution of {n_cols[0]}")
     top_n_df = df.nlargest(10, n_cols[0])
-    fig = px.pie(top_n_df, names=c_cols[0], values=n_cols[0], hole=0.4, template="plotly_white")
+    fig = px.pie(top_n_df, names=c_cols[0], values=n_cols[0], hole=0.4, template="plotly_dark")
     fig.update_traces(textposition='inside', textinfo='percent+label')
     st.plotly_chart(fig, use_container_width=True)
 
@@ -558,39 +651,39 @@ def create_pie_chart(df, n_cols, c_cols):
 def create_bubble_chart(df, n_cols, c_cols):
     st.write(f"#### Bubble Chart: {n_cols[1]} vs. {n_cols[0]}, Sized by {n_cols[2]}")
     fig = px.scatter(df, x=n_cols[0], y=n_cols[1], size=n_cols[2], color=c_cols[0] if c_cols else None,
-                     hover_name=c_cols[0] if c_cols else None, template="plotly_white", size_max=60)
+                     hover_name=c_cols[0] if c_cols else None, template="plotly_dark", size_max=60)
     st.plotly_chart(fig, use_container_width=True)
 
 
 # --- Distribution Charts ---
 def create_histogram(df, n_cols, c_cols):
     st.write(f"#### Histogram: Distribution of {n_cols[0]}")
-    fig = px.histogram(df, x=n_cols[0], color=c_cols[0] if c_cols else None, nbins=30, template="plotly_white")
+    fig = px.histogram(df, x=n_cols[0], color=c_cols[0] if c_cols else None, nbins=30, template="plotly_dark")
     st.plotly_chart(fig, use_container_width=True)
 
 
 def create_box_plot(df, n_cols, c_cols):
     st.write(f"#### Box Plot: Distribution of {n_cols[0]}")
-    fig = px.box(df, y=n_cols[0], x=c_cols[0] if c_cols else None, template="plotly_white")
+    fig = px.box(df, y=n_cols[0], x=c_cols[0] if c_cols else None, template="plotly_dark")
     st.plotly_chart(fig, use_container_width=True)
 
 
 def create_violin_plot(df, n_cols, c_cols):
     st.write(f"#### Violin Plot: Distribution of {n_cols[0]}")
-    fig = px.violin(df, y=n_cols[0], x=c_cols[0] if c_cols else None, box=True, points="all", template="plotly_white")
+    fig = px.violin(df, y=n_cols[0], x=c_cols[0] if c_cols else None, box=True, points="all", template="plotly_dark")
     st.plotly_chart(fig, use_container_width=True)
 
 
 # --- Hierarchical Charts ---
 def create_treemap(df, n_cols, c_cols):
     st.write(f"#### Treemap: {n_cols[0]} by {c_cols[0]}")
-    fig = px.treemap(df, path=[px.Constant("All")] + c_cols, values=n_cols[0], template="plotly_white")
+    fig = px.treemap(df, path=[px.Constant("All")] + c_cols, values=n_cols[0], template="plotly_dark")
     st.plotly_chart(fig, use_container_width=True)
 
 
 def create_sunburst_chart(df, n_cols, c_cols):
     st.write(f"#### Sunburst Chart: {n_cols[0]} by {c_cols[0]}")
-    fig = px.sunburst(df, path=c_cols, values=n_cols[0], template="plotly_white")
+    fig = px.sunburst(df, path=c_cols, values=n_cols[0], template="plotly_dark")
     st.plotly_chart(fig, use_container_width=True)
 
 
@@ -598,14 +691,14 @@ def create_sunburst_chart(df, n_cols, c_cols):
 def create_heatmap(df, n_cols, c_cols):
     st.write(f"#### Heatmap: {n_cols[0]} by {c_cols[0]} and {c_cols[1]}")
     heatmap_data = df.pivot_table(index=c_cols[0], columns=c_cols[1], values=n_cols[0], aggfunc='mean').fillna(0)
-    fig = px.imshow(heatmap_data, text_auto=True, aspect="auto", template="plotly_white")
+    fig = px.imshow(heatmap_data, text_auto=True, aspect="auto", template="plotly_dark")
     st.plotly_chart(fig, use_container_width=True)
 
 
 def create_radar_chart(df, n_cols, c_cols):
     st.write(f"#### Radar Chart: Player Comparison")
     # Radar charts are best for comparing entities across multiple metrics
-    fig = px.line_polar(df, r=n_cols[0], theta=c_cols[0], line_close=True, template="plotly_white")
+    fig = px.line_polar(df, r=n_cols[0], theta=c_cols[0], line_close=True, template="plotly_dark")
     fig.update_traces(fill='toself')
     st.plotly_chart(fig, use_container_width=True)
 
@@ -641,7 +734,7 @@ def create_sankey_diagram(df, n_cols, c_cols):
 
 def create_funnel_chart(df, n_cols, c_cols):
     st.write(f"#### Funnel Chart: Stages of {c_cols[0]}")
-    fig = px.funnel(df, x=n_cols[0], y=c_cols[0], template="plotly_white")
+    fig = px.funnel(df, x=n_cols[0], y=c_cols[0], template="plotly_dark")
     st.plotly_chart(fig, use_container_width=True)
 
 
