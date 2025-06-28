@@ -72,6 +72,14 @@ def initialize_session_state():
         'config_items_radar': [],  # The items to compare (e.g., player names)
         'config_metrics_radar': [],  # The numeric metrics for the axes
         'config_item_col_radar': None,  # The column containing the items to compare
+        # --- TreeMap ---
+        'config_path_treemap': [],  # For the hierarchy levels
+        'config_values_treemap': None,  # For the size of the rectangles
+        'config_color_treemap': None,
+        # Sankey Chart ---
+        'config_source_sankey': None,  # The "from" column
+        'config_target_sankey': None,  # The "to" column
+        'config_value_sankey': None,
         # A dictionary to hold aggregation function choices for each chart
         'agg_configs': {}  # <-- ADD
     }
@@ -147,7 +155,7 @@ def build_chart_studio(df):
     st.selectbox(
         "Choose a chart type to build:",
         options=["Bar Chart", "Line Chart", "Donut Chart", "Sunburst Chart", "Nightingale Rose Chart", "Scatter Plot",
-                 "Histogram", "Box Plot", "Heatmap", "Radar Chart"],
+                 "Histogram", "Box Plot", "Heatmap", "Radar Chart", "Treemap", "Sankey Diagram"],
         key='chart_type'  # Bind this to session state
     )
 
@@ -183,6 +191,10 @@ def build_chart_studio(df):
             render_heatmap_config(df_clean)
         elif st.session_state.chart_type == 'Radar Chart':
             render_radar_chart_config(df_clean)
+        elif st.session_state.chart_type == 'Treemap':
+            render_treemap_config(df_clean)
+        elif st.session_state.chart_type == 'Sankey Diagram':
+            render_sankey_diagram_config(df_clean)
 
     with tab_summary:
         # Pass df_clean so the Group By dropdown has all categorical columns
@@ -215,6 +227,10 @@ def build_chart_studio(df):
         create_heatmap_from_state(df_processed)
     elif st.session_state.chart_type == 'Radar Chart':
         create_radar_chart_from_state(df_processed)
+    elif st.session_state.chart_type == 'Treemap':
+        create_treemap_from_state(df_processed)
+    elif st.session_state.chart_type == 'Sankey Diagram':
+        create_sankey_diagram_from_state(df_processed)
 
 def process_data(df):
     """
@@ -355,7 +371,7 @@ def render_summary_tab(df):
     with st.container(border=True):
         active_chart = st.session_state.chart_type
 
-        if active_chart in ['Histogram', 'Donut Chart', 'Sunburst Chart', 'Radar Chart']:
+        if active_chart in ['Histogram', 'Donut Chart', 'Sunburst Chart', 'Radar Chart', 'Treemap', 'Sankey Diagram']:
             st.info(f"Summarization (Group By) is not applicable for a {active_chart}.")
             return
 
@@ -1041,6 +1057,135 @@ def create_radar_chart_from_state(df):
     except Exception as e:
         st.error(
             f"Failed to create radar chart. This chart requires at least 2 metrics and 2 items to compare. Error: {e}")
+
+def render_treemap_config(df):
+    """Renders the UI for configuring a Treemap."""
+    with st.container(border=True):
+        st.write("**Configure Your Treemap**")
+        numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
+        categorical_cols = df.select_dtypes(include=['object', 'int64']).columns.tolist()
+
+        if not numeric_cols or not categorical_cols:
+            st.warning("Treemaps require at least one numeric and one categorical column.")
+            return
+
+        st.info(
+            "A Treemap shows hierarchical data. Start by selecting the top-level category for the 'path', then add more for deeper levels.")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            st.multiselect("Hierarchy Path (Categories):", options=categorical_cols, key='config_path_treemap',
+                           help="Defines the nested levels of the treemap.")
+        with col2:
+            st.selectbox("Size of Rectangles (Numeric):", options=numeric_cols, key='config_values_treemap')
+
+        st.selectbox("Color of Rectangles (Optional Numeric):", options=[None] + numeric_cols,
+                     key='config_color_treemap',
+                     help="Use color to represent a second numeric metric, like 'strike_rate'.")
+
+def create_treemap_from_state(df):
+    """Plots a treemap using parameters stored in session_state."""
+    path = st.session_state.config_path_treemap
+    values = st.session_state.config_values_treemap
+    color = st.session_state.config_color_treemap
+
+    if not path or not values:
+        st.info("Please configure the Hierarchy Path and Size in the 'Configure Chart' tab.")
+        return
+
+    try:
+        title = f"Treemap of {values} by {', '.join(path)}"
+        if color:
+            title += f" (Colored by {color})"
+
+        fig = px.treemap(
+            df,
+            path=[px.Constant("All")] + path,  # Add a root node for a better starting view
+            values=values,
+            color=color,
+            color_continuous_scale='YlGnBu',  # A nice blue-green color scale
+            template="plotly_white",
+            title=title,
+            hover_data={col: ':.2f' for col in [values, color] if col}  # Format hover data
+        )
+        fig.update_layout(margin=dict(t=50, l=25, r=25, b=25))
+        st.plotly_chart(fig, use_container_width=True)
+
+    except Exception as e:
+        st.error(f"Failed to create treemap. Error: {e}")
+
+def render_sankey_diagram_config(df):
+    """Renders the UI for configuring a Sankey Diagram."""
+    with st.container(border=True):
+        st.write("**Configure Your Sankey Diagram**")
+        numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
+        categorical_cols = df.select_dtypes(include=['object', 'int64']).columns.tolist()
+
+        if len(categorical_cols) < 2 or not numeric_cols:
+            st.warning(
+                "Sankey Diagrams require at least two categorical columns (for Source and Target) and one numeric column (for Value).")
+            return
+
+        st.info(
+            "Select the columns representing the 'Source' of the flow, the 'Target', and the numeric 'Value' of the flow.")
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.selectbox("Source (From):", options=categorical_cols, key='config_source_sankey')
+        with col2:
+            st.selectbox("Target (To):",
+                         options=[c for c in categorical_cols if c != st.session_state.config_source_sankey],
+                         key='config_target_sankey')
+        with col3:
+            st.selectbox("Value (Flow Amount):", options=numeric_cols, key='config_value_sankey')
+
+def create_sankey_diagram_from_state(df):
+    """Prepares data and plots a Sankey diagram using parameters from session_state."""
+    source_col = st.session_state.config_source_sankey
+    target_col = st.session_state.config_target_sankey
+    value_col = st.session_state.config_value_sankey
+
+    if not all([source_col, target_col, value_col]):
+        st.info("Please configure the Source, Target, and Value in the 'Configure Chart' tab.")
+        return
+
+    try:
+        # --- Data Preparation for Sankey ---
+        # 1. Create a complete list of unique labels from both source and target columns
+        labels = pd.concat([df[source_col], df[target_col]]).unique()
+
+        # 2. Create a mapping from the label name to its integer index
+        label_map = {label: i for i, label in enumerate(labels)}
+
+        # 3. Create the final source, target, and value lists for the plot
+        source_indices = df[source_col].map(label_map)
+        target_indices = df[target_col].map(label_map)
+        values = df[value_col]
+
+        # --- Plotting with plotly.graph_objects ---
+        fig = go.Figure(data=[go.Sankey(
+            node=dict(
+                pad=15,
+                thickness=20,
+                line=dict(color="black", width=0.5),
+                label=labels,
+            ),
+            link=dict(
+                source=source_indices,
+                target=target_indices,
+                value=values
+            )
+        )])
+
+        fig.update_layout(
+            title_text=f"Flow from {source_col} to {target_col}",
+            template="plotly_white"
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    except Exception as e:
+        st.error(
+            f"Failed to create Sankey diagram. Ensure your data structure is suitable (Source -> Target -> Value). Error: {e}")
 
 # ----- UNUSED -----
 def create_scatter_plot(df, n_cols, c_cols):
