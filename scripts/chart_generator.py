@@ -60,6 +60,18 @@ def initialize_session_state():
         'config_points_box': False,  # To show/hide all data points
         'box_plot_summarize_toggle': False,
         'box_plot_group_by_cols': [],
+        # --- Heat Map ---
+        'config_x_col_heat': None,  # The column for the X-axis categories
+        'config_y_col_heat': None,  # The column for the Y-axis categories
+        'config_z_col_heat': None,  # The numeric column for the color value
+        'config_text_auto_heat': True,  # To show/hide the text values on cells
+        'config_color_scale_heat': 'Reds',  # Default color theme
+        'heatmap_summarize_toggle': False,  # Note: Summarization is less common for heatmaps
+        'heatmap_group_by_cols': [],
+        # --- Radar Chart ---
+        'config_items_radar': [],  # The items to compare (e.g., player names)
+        'config_metrics_radar': [],  # The numeric metrics for the axes
+        'config_item_col_radar': None,  # The column containing the items to compare
         # A dictionary to hold aggregation function choices for each chart
         'agg_configs': {}  # <-- ADD
     }
@@ -135,7 +147,7 @@ def build_chart_studio(df):
     st.selectbox(
         "Choose a chart type to build:",
         options=["Bar Chart", "Line Chart", "Donut Chart", "Sunburst Chart", "Nightingale Rose Chart", "Scatter Plot",
-                 "Histogram", "Box Plot"],
+                 "Histogram", "Box Plot", "Heatmap", "Radar Chart"],
         key='chart_type'  # Bind this to session state
     )
 
@@ -167,6 +179,10 @@ def build_chart_studio(df):
             render_histogram_config(df_clean)
         elif st.session_state.chart_type == 'Box Plot':
             render_box_plot_config(df_clean)
+        elif st.session_state.chart_type == 'Heatmap':
+            render_heatmap_config(df_clean)
+        elif st.session_state.chart_type == 'Radar Chart':
+            render_radar_chart_config(df_clean)
 
     with tab_summary:
         # Pass df_clean so the Group By dropdown has all categorical columns
@@ -195,6 +211,10 @@ def build_chart_studio(df):
         create_histogram_from_state(df_processed)
     elif st.session_state.chart_type == 'Box Plot':
         create_box_plot_from_state(df_processed)
+    elif st.session_state.chart_type == 'Heatmap':
+        create_heatmap_from_state(df_processed)
+    elif st.session_state.chart_type == 'Radar Chart':
+        create_radar_chart_from_state(df_processed)
 
 def process_data(df):
     """
@@ -251,6 +271,14 @@ def process_data(df):
             axis_cols = [
                 st.session_state.get('config_x_col_box'),
                 st.session_state.get('config_color_col_box')
+            ]
+        elif active_chart == 'Heatmap':
+            # The z-axis is the numeric value to aggregate
+            value_cols = [st.session_state.get('config_z_col_heat')]
+            # Both x and y axes are categorical and must be preserved
+            axis_cols = [
+                st.session_state.get('config_x_col_heat'),
+                st.session_state.get('config_y_col_heat')
             ]
 
         # Filter out None values
@@ -327,8 +355,8 @@ def render_summary_tab(df):
     with st.container(border=True):
         active_chart = st.session_state.chart_type
 
-        if active_chart == 'Histogram':
-            st.info("Summarization (Group By) is not applicable for a Histogram, as it analyzes the raw data distribution.")
+        if active_chart in ['Histogram', 'Donut Chart', 'Sunburst Chart', 'Radar Chart']:
+            st.info(f"Summarization (Group By) is not applicable for a {active_chart}.")
             return
 
         # Define keys based on the active chart
@@ -363,6 +391,12 @@ def render_summary_tab(df):
                 ]
                 # Filter out any that are not selected (i.e., are None)
                 value_cols = [col for col in potential_cols if col]
+            elif active_chart == 'Box Plot':
+                value_cols = [st.session_state.get('config_y_col_box')]
+            elif active_chart == 'Heatmap':
+                z_col = st.session_state.get('config_z_col_heat')
+                if z_col:
+                    value_cols = [z_col]
 
             with col2:
                 st.multiselect("Group By:", options=df.select_dtypes(include=['object', 'int64']).columns, key=groupby_key)
@@ -823,6 +857,190 @@ def create_box_plot_from_state(df):
 
     except Exception as e:
         st.error(f"Failed to create {plot_type.lower()} plot: {e}")
+
+def render_heatmap_config(df):
+    """Renders the UI for configuring a Heatmap."""
+    with st.container(border=True):
+        st.write("**1. Select Axes & Value**")
+        numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
+        categorical_cols = df.select_dtypes(include=['object', 'int64']).columns.tolist()
+
+        if len(categorical_cols) < 2 or not numeric_cols:
+            st.warning("Heatmaps require at least two categorical columns and one numeric column.")
+            return
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.selectbox("X-Axis Category:", options=categorical_cols, key='config_x_col_heat')
+        with col2:
+            st.selectbox("Y-Axis Category:",
+                         options=[c for c in categorical_cols if c != st.session_state.config_x_col_heat],
+                         key='config_y_col_heat')
+        with col3:
+            st.selectbox("Color Value (Numeric):", options=numeric_cols, key='config_z_col_heat')
+
+        st.write("**2. Select Style**")
+        col4, col5 = st.columns(2)
+        with col4:
+            st.selectbox("Color Theme:", options=['Reds', 'Blues', 'Viridis', 'Plasma', 'YlGnBu'],
+                         key='config_color_scale_heat')
+        with col5:
+            st.toggle("Show Values on Cells", value=True, key='config_text_auto_heat')
+
+def create_heatmap_from_state(df):
+    """Pivots data and plots a heatmap using parameters stored in session_state."""
+    x_col = st.session_state.config_x_col_heat
+    y_col = st.session_state.config_y_col_heat
+    z_col = st.session_state.config_z_col_heat
+
+    if not all([x_col, y_col, z_col]):
+        st.info("Please configure the X-Axis, Y-Axis, and Color Value in the 'Configure Chart' tab.")
+        return
+
+    try:
+        # A heatmap requires data in a "matrix" or "pivoted" format.
+        # We use pandas' pivot_table to create this from our "long" data.
+        heatmap_data = df.pivot_table(
+            index=y_col,
+            columns=x_col,
+            values=z_col,
+            aggfunc='mean'  # Default to mean for duplicate entries
+        ).fillna(0)  # Fill any missing cells with 0
+
+        fig = px.imshow(
+            heatmap_data,
+            text_auto=st.session_state.config_text_auto_heat,
+            aspect="auto",
+            template="plotly_white",
+            color_continuous_scale=st.session_state.config_color_scale_heat,
+            title=f"{z_col} by {y_col} and {x_col}"
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    except Exception as e:
+        st.error(f"Failed to create heatmap: {e}. Heatmaps require a specific data structure.")
+
+def render_radar_chart_config(df):
+    """Renders the UI for configuring a Radar Chart."""
+    with st.container(border=True):
+        st.write("**Configure Your Radar Chart**")
+        numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
+        categorical_cols = df.select_dtypes(include=['object', 'int64']).columns.tolist()
+
+        if not numeric_cols or not categorical_cols:
+            st.warning("Radar Charts require at least one categorical and multiple numeric columns.")
+            return
+
+        st.info("A Radar Chart is best for comparing a few items across multiple metrics.")
+
+        # 1. Select the column that contains the items you want to compare
+        item_col = st.selectbox("Select column with items to compare:", options=categorical_cols,
+                                key='config_item_col_radar')
+
+        if item_col:
+            # 2. Select which specific items from that column you want to plot
+            all_items = df[item_col].unique()
+            st.multiselect("Select items to show (3-5 recommended):", options=all_items, key='config_items_radar')
+
+        # 3. Select the numeric metrics for the radar's axes
+        st.multiselect("Select metrics for axes:", options=numeric_cols, key='config_metrics_radar')
+
+        st.toggle(
+            "Normalize Data (0-100 Score)",
+            key='config_normalize_radar',
+            help="Rescales all metrics to a common 0-100 scale to make profiles comparable. Highly recommended if your metrics have different ranges (e.g., runs and average)."
+        ) \
+            # In scripts/chart_generator.py
+
+def create_radar_chart_from_state(df):
+    """
+    Plots a robust radar chart using plotly.graph_objects for full control,
+    especially over the hover tooltip.
+    """
+    item_col = st.session_state.get('config_item_col_radar')
+    items_to_plot = st.session_state.get('config_items_radar', [])
+    metrics_to_plot = st.session_state.get('config_metrics_radar', [])
+    normalize = st.session_state.get('config_normalize_radar', False)
+
+    if not all([item_col, items_to_plot]) or len(metrics_to_plot) < 2:
+        st.info(
+            "From the 'Configure Chart' tab, please select an 'item column', at least 2 'items to show', and at least 2 'metrics for axes'.")
+        return
+
+    try:
+        # --- Data Preparation ---
+        # 1. Filter to only the selected players/items
+        df_filtered = df[df[item_col].isin(items_to_plot)].set_index(item_col)
+
+        # 2. Select only the metrics we need
+        df_metrics = df_filtered[metrics_to_plot]
+
+        # 3. Prepare data for normalization (find min/max for each metric across the selected items)
+        data_stats = {
+            'min': df_metrics.min(),
+            'max': df_metrics.max()
+        }
+
+        # --- Chart Creation using plotly.graph_objects ---
+        fig = go.Figure()
+
+        # Add one trace (one player shape) at a time
+        for item in items_to_plot:
+            player_data = df_metrics.loc[item]
+
+            # Get the raw values for the hover tooltip
+            raw_values = player_data.values
+
+            # Get the normalized values for plotting the shape
+            if normalize:
+                # Min-Max normalization: (value - min) / (max - min)
+                # This calculation is now done per-player, per-metric
+                normalized_values = [
+                    ((raw_values[i] - data_stats['min'][metric]) / (
+                                data_stats['max'][metric] - data_stats['min'][metric])) * 100
+                    if (data_stats['max'][metric] - data_stats['min'][metric]) != 0 else 0
+                    for i, metric in enumerate(metrics_to_plot)
+                ]
+                plot_values = normalized_values
+            else:
+                plot_values = raw_values
+
+            hover_text_lines = [f"<b>{item}</b>"]
+            hover_text_lines.extend([
+                f"{metric}: {raw_values[i]:.2f}"
+                for i, metric in enumerate(metrics_to_plot)
+            ])
+            final_hover_text = "<br>".join(hover_text_lines)
+            fig.add_trace(go.Scatterpolar(
+                r=plot_values,
+                theta=metrics_to_plot,
+                fill='toself',
+                name=item,  # The player's name appears in the legend
+                text=final_hover_text,  # Use our new complete text block
+                hoverinfo="text"  # Tell plotly to ONLY use our custom text
+            ))
+
+        # --- Styling ---
+        radial_axis_title = "Normalized Score (0-100)" if normalize else "Raw Value"
+        fig.update_layout(
+            polar=dict(
+                radialaxis=dict(
+                    visible=True,
+                    # If normalizing, set the range to 0-100 for a clean look
+                    range=[0, 100] if normalize else None,
+                    title=dict(text=radial_axis_title)
+                )
+            ),
+            showlegend=True,
+            template="plotly_dark",
+            title=f"Profile Comparison: {', '.join(items_to_plot)}"
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
+
+    except Exception as e:
+        st.error(
+            f"Failed to create radar chart. This chart requires at least 2 metrics and 2 items to compare. Error: {e}")
 
 # ----- UNUSED -----
 def create_scatter_plot(df, n_cols, c_cols):
