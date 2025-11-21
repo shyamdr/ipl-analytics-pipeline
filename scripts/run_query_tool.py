@@ -99,7 +99,7 @@ def run_text_to_sql_tool():
     print("Type 'exit' or 'quit' to end.")
     print("-" * 50)
 
-    model = genai.GenerativeModel('gemini-1.5-flash-latest')
+    model = genai.GenerativeModel('gemini-2.5-flash-lite')
 
     while True:
         user_question = input("> ")

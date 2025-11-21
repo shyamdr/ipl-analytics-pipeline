@@ -25,7 +25,7 @@ def run_api_test():
 
         print(f"\nSending prompt: '{prompt}'")
 
-        model = genai.GenerativeModel('gemini-1.5-flash-latest')
+        model = genai.GenerativeModel('gemini-2.5-flash-lite')
         response = model.generate_content(prompt)
 
         print("\n--- Gemini's Response ---")

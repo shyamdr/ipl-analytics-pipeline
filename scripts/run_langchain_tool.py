@@ -38,7 +38,7 @@ def run_langchain_sql_tool():
     logger.info("Database connection successful and schema loaded by LangChain.")
 
     # --- 3. Initialize the LLM ---
-    llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0)
+    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite", temperature=0)
 
     # --- 4. Create the Text-to-SQL Chain ---
     # This single line replaces all our manual prompt engineering.

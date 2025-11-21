@@ -59,7 +59,7 @@ def build_enrichment_prompt(player_data: dict) -> str:
 def get_player_details_from_ai(player_data: dict) -> dict | None:
     """Queries the Gemini API with a prompt and returns a validated JSON object."""
     try:
-        model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
+        model = genai.GenerativeModel('gemini-2.5-flash')
         prompt = build_enrichment_prompt(player_data)
         #print(prompt)
 

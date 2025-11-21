@@ -209,7 +209,7 @@ def summarize_results_with_ai(user_question: str, db_results: list, headers: lis
     """
 
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-2.5-flash-lite')
         response = model.generate_content(prompt)
         return response.text
     except Exception as e:
@@ -228,7 +228,7 @@ def run_advanced_langchain_tool(user_question: str) -> tuple[str, list, list, bo
         try:
             genai.configure(api_key=api_key)
             logger.info("Gemini API configured successfully.")
-            _global_llm_cache['llm'] = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
+            _global_llm_cache['llm'] = genai.GenerativeModel('gemini-2.5-flash')
         except Exception as e:
             logger.error(f"Error configuring API: {e}")
             return f"API Configuration failed: {e}", [], [], False
@@ -251,7 +251,7 @@ def run_advanced_langchain_tool(user_question: str) -> tuple[str, list, list, bo
 
     # Build the LangChain componenets (Prompt and Chain)
     prompt_template = construct_prompt(db_schema, formatted_examples, "{question}")
-    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-preview-05-20", temperature=0)
+    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
     sql_query_chain = (
             {
                 "schema": lambda x: db_schema,  # Always use the db_schema we loaded
