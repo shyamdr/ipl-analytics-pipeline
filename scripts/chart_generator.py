@@ -481,7 +481,7 @@ def create_bar_chart_from_state(df):
                      title=f"{', '.join(value_cols)} by {category_col}", template="plotly_dark",
                      barmode=st.session_state.config_barmode,
                      orientation='v' if st.session_state.config_orientation == 'Vertical' else 'h')
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
     except Exception as e:
         st.error(f"Failed to create chart: {e}")
 
@@ -548,7 +548,7 @@ def create_line_chart_from_state(df):
             else:
                 st.warning("Trendline can only be shown for a single Y-Axis selection.")
 
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     except Exception as e:
         st.error(f"Failed to create line chart: {e}")
@@ -584,7 +584,7 @@ def create_donut_chart_from_state(df):
                      template="plotly_dark", title=f"Distribution of {values_col} by {names_col}")
         fig.update_traces(textposition='inside', textinfo='percent+label',
                           pull=[0.05 if i == 0 else 0 for i in range(len(df_top))])
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
     except Exception as e:
         st.error(f"Failed to create donut chart: {e}")
 
@@ -614,7 +614,7 @@ def create_sunburst_chart_from_state(df):
     try:
         fig = px.sunburst(df, path=path_cols, values=values_col,
                           template="plotly_dark", title=f"Breakdown of {values_col} by {', '.join(path_cols)}")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
     except Exception as e:
         st.error(f"Failed to create sunburst chart: {e}")
 
@@ -651,7 +651,7 @@ def create_nightingale_chart_from_state(df):
                            template="plotly_dark",
                            color=r_col, # Color bars by their value for a nice effect
                            title=f"Distribution of {r_col} by {theta_col}")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
     except Exception as e:
         st.error(f"Failed to create Nightingale Rose chart: {e}")
 
@@ -712,7 +712,7 @@ def create_scatter_plot_from_state(df):
             template="plotly_dark",
             title=f"{y_col} vs. {x_col}"
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     except Exception as e:
         st.error(f"Failed to create scatter plot: {e}")
@@ -798,7 +798,7 @@ def create_histogram_from_state(df):
                 template="plotly_white", title=title
             )
         if fig:
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
 
     except Exception as e:
         st.error(f"Failed to create histogram: {e}")
@@ -869,7 +869,7 @@ def create_box_plot_from_state(df):
                 title=title
             )
 
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     except Exception as e:
         st.error(f"Failed to create {plot_type.lower()} plot: {e}")
@@ -931,7 +931,7 @@ def create_heatmap_from_state(df):
             color_continuous_scale=st.session_state.config_color_scale_heat,
             title=f"{z_col} by {y_col} and {x_col}"
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     except Exception as e:
         st.error(f"Failed to create heatmap: {e}. Heatmaps require a specific data structure.")
@@ -1052,7 +1052,7 @@ def create_radar_chart_from_state(df):
             title=f"Profile Comparison: {', '.join(items_to_plot)}"
         )
 
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     except Exception as e:
         st.error(
@@ -1109,7 +1109,7 @@ def create_treemap_from_state(df):
             hover_data={col: ':.2f' for col in [values, color] if col}  # Format hover data
         )
         fig.update_layout(margin=dict(t=50, l=25, r=25, b=25))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     except Exception as e:
         st.error(f"Failed to create treemap. Error: {e}")
@@ -1181,7 +1181,7 @@ def create_sankey_diagram_from_state(df):
             title_text=f"Flow from {source_col} to {target_col}",
             template="plotly_white"
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     except Exception as e:
         st.error(
@@ -1192,7 +1192,7 @@ def create_scatter_plot(df, n_cols, c_cols):
     st.write(f"#### Scatter Plot: {n_cols[1]} vs. {n_cols[0]}")
     fig = px.scatter(df, x=n_cols[0], y=n_cols[1], hover_name=c_cols[0] if c_cols else None,
                      color=c_cols[0] if c_cols else None, template="plotly_dark")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 def create_pie_chart(df, n_cols, c_cols):
@@ -1200,46 +1200,46 @@ def create_pie_chart(df, n_cols, c_cols):
     top_n_df = df.nlargest(10, n_cols[0])
     fig = px.pie(top_n_df, names=c_cols[0], values=n_cols[0], hole=0.4, template="plotly_dark")
     fig.update_traces(textposition='inside', textinfo='percent+label')
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 def create_bubble_chart(df, n_cols, c_cols):
     st.write(f"#### Bubble Chart: {n_cols[1]} vs. {n_cols[0]}, Sized by {n_cols[2]}")
     fig = px.scatter(df, x=n_cols[0], y=n_cols[1], size=n_cols[2], color=c_cols[0] if c_cols else None,
                      hover_name=c_cols[0] if c_cols else None, template="plotly_dark", size_max=60)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 # --- Distribution Charts ---
 def create_histogram(df, n_cols, c_cols):
     st.write(f"#### Histogram: Distribution of {n_cols[0]}")
     fig = px.histogram(df, x=n_cols[0], color=c_cols[0] if c_cols else None, nbins=30, template="plotly_dark")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 def create_box_plot(df, n_cols, c_cols):
     st.write(f"#### Box Plot: Distribution of {n_cols[0]}")
     fig = px.box(df, y=n_cols[0], x=c_cols[0] if c_cols else None, template="plotly_dark")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 def create_violin_plot(df, n_cols, c_cols):
     st.write(f"#### Violin Plot: Distribution of {n_cols[0]}")
     fig = px.violin(df, y=n_cols[0], x=c_cols[0] if c_cols else None, box=True, points="all", template="plotly_dark")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 # --- Hierarchical Charts ---
 def create_treemap(df, n_cols, c_cols):
     st.write(f"#### Treemap: {n_cols[0]} by {c_cols[0]}")
     fig = px.treemap(df, path=[px.Constant("All")] + c_cols, values=n_cols[0], template="plotly_dark")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 def create_sunburst_chart(df, n_cols, c_cols):
     st.write(f"#### Sunburst Chart: {n_cols[0]} by {c_cols[0]}")
     fig = px.sunburst(df, path=c_cols, values=n_cols[0], template="plotly_dark")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 # --- Relational / Flow Charts ---
@@ -1247,7 +1247,7 @@ def create_heatmap(df, n_cols, c_cols):
     st.write(f"#### Heatmap: {n_cols[0]} by {c_cols[0]} and {c_cols[1]}")
     heatmap_data = df.pivot_table(index=c_cols[0], columns=c_cols[1], values=n_cols[0], aggfunc='mean').fillna(0)
     fig = px.imshow(heatmap_data, text_auto=True, aspect="auto", template="plotly_dark")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 def create_radar_chart(df, n_cols, c_cols):
@@ -1255,7 +1255,7 @@ def create_radar_chart(df, n_cols, c_cols):
     # Radar charts are best for comparing entities across multiple metrics
     fig = px.line_polar(df, r=n_cols[0], theta=c_cols[0], line_close=True, template="plotly_dark")
     fig.update_traces(fill='toself')
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 def create_sankey_diagram(df, n_cols, c_cols):
@@ -1284,13 +1284,13 @@ def create_sankey_diagram(df, n_cols, c_cols):
         )
     )])
     fig.update_layout(title_text=f"Flow from {source_col} to {target_col}", font_size=10)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 def create_funnel_chart(df, n_cols, c_cols):
     st.write(f"#### Funnel Chart: Stages of {c_cols[0]}")
     fig = px.funnel(df, x=n_cols[0], y=c_cols[0], template="plotly_dark")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 # ==============================================================================

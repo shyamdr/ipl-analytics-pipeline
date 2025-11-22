@@ -127,7 +127,7 @@ if st.session_state['api_called_success']:
             st.session_state['last_results_data'],
             columns=st.session_state['last_results_headers'],
             index=custom_index)
-        st.dataframe(df_results, use_container_width=True)
+        st.dataframe(df_results, width="stretch")
 
         build_chart_studio(df_results)
 
