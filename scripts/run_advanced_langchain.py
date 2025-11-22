@@ -69,10 +69,17 @@ def construct_prompt(schema, examples, user_question):
 
 Here's some general guidelines to follow :
 1. No. of rows to return : Regardless of any superlatives, such as "best, highest, biggest, lowest, smallest, some, a few" etc, by default, ALWAYS return 10 records (use LIMIT 10). If the user asks - "Give me top n rows" or "Give me exactly n rows" only then use LIMIT n. If the user question asks for a set of data that is fixed such as on a time-frame like "trend across all the seasons" or "year-wise" or something similar, then instead of default limit, use maximum limit i.e (LIMIT 100). If the user asks for more than 100 records, cap the final output to LIMIT 100. never output more than 100 rows.
-2. Searching for a player : Do not use the original player name provided by the user in the SQL query for joins or filters. Use the function 'get_player_id_by_name' and pass the input name to search for the player_id from always. The result of this function is to be subsequently used to join or filters.
+2. Searching for a player : Do not use the original player name provided by the user in the SQL query for joins or filters. Use the function 'get_player_id_by_name' and pass the input name to search for the player_id from always. The result of this function is to be subsequently used to join or filters. NEVER use the function 'get_player_id_by_name' inside the WHERE clause of a large table. ALWAYS calculate the player_id in a CTE first using the 'MATERIALIZED' keyword. Refer one-shot example for a sample pattern
 3. Choosing right columns : Pay attention to use only the column names that you can see in the schema description. Be careful to not query for columns that do not exist. Also, pay attention to which column is in which table.
 4. Providing right columns : Make sure you do not provide any internal id columns to the user such as player_id, match_id, inning_id etc, instead always provide the actual dimension that is a real-world entity such as if you present venue_id, instead show the name of the venue, if the final output should contain match id, instead of match id, provide the details of the match such as the match was between the two teams A & B and when and where it was played, if required, etc.
 5. **CRITICAL:** Ensure the generated SQL is always syntactically correct and executable in PostgreSQL. Double-check all keywords, table aliases(make sure they are not SQL keywords), and column references. If you are unsure, try a simpler approach.
+6. Enrich data with context : When the user asks for an aggregate metric (e.g., "most toss wins", "highest run scorer", "most wickets"), DO NOT just return the single count.
+   - **ALWAYS** include the context (the denominator) and a calculated percentage/ratio without changing the grain of the data.
+   - Add additional fields without changing the granularity of the data to improve the data and user experience - 
+        For each of the different types of questions, these are some example of columns that can be added
+        team batting/player batting/batting partnership stats - player_name, matches played, batting average, batting strike rate, runs, boundaries, age, batting hand, player contribution split (partnerships), player contribution for team (individual player) etc.
+        team bowling/player bowling/bowling partnership stats - player name, matches played, bowling average, bowling strike rate, wickets, economy, age, bowler type, bowling hand, player contribution split (partnerships), player contribution for team (individual player) etc.
+        team fielding/player fielding stats - player name, matches played, catches, stumping, run outs, age etc.
 
 ### PostgreSQL Schema:
 {schema}

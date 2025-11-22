@@ -1,8 +1,8 @@
--- FUNCTION: public.get_player_id_by_name(text)
+-- FUNCTION: public.get_player_id_by_name_v2(text)
 
--- DROP FUNCTION IF EXISTS public.get_player_id_by_name(text);
+-- DROP FUNCTION IF EXISTS public.get_player_id_by_name_v2(text);
 
-CREATE OR REPLACE FUNCTION public.get_player_id_by_name(
+CREATE OR REPLACE FUNCTION public.get_player_id_by_name_v2(
 	search_name text)
     RETURNS text
     LANGUAGE 'plpgsql'
@@ -34,16 +34,16 @@ BEGIN
 		SELECT 'john' AS nickname, 'johnny' AS longform
     ),
     SplitName AS (
-        SELECT 
+        SELECT
             TRIM(SPLIT_PART(LOWER(search_name), ' ', 1)) AS first_name,
             TRIM(SPLIT_PART(LOWER(search_name), ' ', 2)) AS last_name
     ),
     NameVariants AS (
-        SELECT 
-            CASE 
+        SELECT
+            CASE
                 WHEN EXISTS (
-                    SELECT 1 
-                    FROM NameMapping nm 
+                    SELECT 1
+                    FROM NameMapping nm
                     WHERE nm.nickname = SplitName.first_name
                 )
                 THEN ARRAY[
@@ -136,16 +136,22 @@ BEGIN
             levenshtein(mt.mcode_search_name, mt.mcode_full_name) AS lv_score2,
             similarity(mt.mcode_search_name, mt.mcode_full_name) AS trigram_score2
         FROM MetaphoneTexts mt
-        WHERE 
+        WHERE
+			-- CONDITION 1: Strict Levenshtein logic (Works for typos like 'Virta')
             ((levenshtein(mt.mcode_search_name, mt.mcode_first_last_name) <= ROUND(0.3 * GREATEST(LENGTH(mt.mcode_search_name), LENGTH(mt.mcode_first_last_name)))
                 AND similarity(mt.mcode_search_name, mt.mcode_first_last_name) >= 0.3)
             OR (levenshtein(mt.mcode_search_name, mt.mcode_full_name) <= ROUND(0.3 * GREATEST(LENGTH(mt.mcode_search_name), LENGTH(mt.mcode_full_name)))
                 AND similarity(mt.mcode_search_name, mt.mcode_full_name) >= 0.3))
+            -- CONDITION 2: Metaphone Containment (Works for 'Virat' -> 'Virat Kohli')
+            -- This fixes your issue. If 'FRT' is inside 'FRT KL', we allow it.
+            OR (mt.mcode_first_last_name LIKE '%' || mt.mcode_search_name || '%')
+            OR (mt.mcode_full_name LIKE '%' || mt.mcode_search_name || '%')
             AND mt.identifier IS NOT NULL
     )
-    SELECT identifier INTO found_identifier
-    FROM FuzzyCandidates
-    ORDER BY lv_score1 ASC, trigram_score1 DESC, lv_score2 ASC, trigram_score2 DESC
+    SELECT fc.identifier INTO found_identifier
+    FROM FuzzyCandidates fc
+	JOIN Players p ON fc.identifier = p.identifier
+    ORDER BY p.popularity_score DESC, fc.lv_score1 ASC, trigram_score1 DESC, lv_score2 ASC, trigram_score2 DESC
     LIMIT 1;
 
     RETURN found_identifier;
@@ -155,5 +161,5 @@ BEGIN
 END;
 $BODY$;
 
-ALTER FUNCTION public.get_player_id_by_name(text)
+ALTER FUNCTION public.get_player_id_by_name_v2(text)
     OWNER TO postgres;

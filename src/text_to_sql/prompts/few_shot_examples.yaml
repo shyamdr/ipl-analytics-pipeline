@@ -17,7 +17,7 @@
     ),
     CalculatedAverages AS (
       SELECT
-        p.first_last_name, # Use this field always to display the player names for the final output
+        p.first_last_name as name, -- Use this field always to display the player names for the final output
         s.total_runs,
         (s.total_runs::FLOAT / NULLIF(s.total_balls_faced, 0)) * 100 AS strike_rate,
         (s.total_runs::FLOAT / NULLIF(s.total_outs, 0)) AS batting_average
@@ -48,8 +48,10 @@
   question: "Which batter hit the most sixes in the 2024 season of IPL?"
   sql: |
     SELECT
-      p.first_last_name AS batter_name, # Use this field always to display the player names for the final output
-      COUNT(*) AS sixes_count
+      p.first_last_name AS batter_name, -- Use 'first_last_name' for player identification
+      COUNT(*) AS sixes_count,
+      COUNT(DISTINCT i.inning_id) AS innings_played, -- Context: Always include the denominator (innings/matches) for volume stats
+      ROUND((COUNT(*)::NUMERIC / NULLIF(COUNT(DISTINCT i.inning_id), 0)), 2) AS sixes_per_inning -- Calculation: Use NULLIF to prevent divide-by-zero errors and ::NUMERIC for decimal precision
     FROM Deliveries AS d
     JOIN Players AS p
       ON d.batter_identifier = p.identifier
@@ -60,7 +62,7 @@
     WHERE
       d.runs_batter = 6 AND m.season_year = 2024
     GROUP BY
-      p.name
+      p.first_last_name
     ORDER BY
       sixes_count DESC
     LIMIT 10; -- default limit
@@ -73,11 +75,18 @@
         LEAST(d.batter_identifier, d.non_striker_identifier) AS player1_id,
         GREATEST(d.batter_identifier, d.non_striker_identifier) AS player2_id,
         SUM(d.runs_batter) AS partnership_runs,
-        -- This is the corrected logic for legitimate balls (excluding wides AND no-balls).
-        COUNT(CASE WHEN d.extras_wides = 0 AND d.extras_noballs = 0 THEN 1 END) AS legitimate_balls
+        -- Calculate Player 1 Runs (The player with the lower ID)
+        SUM(CASE WHEN d.batter_identifier = LEAST(d.batter_identifier, d.non_striker_identifier) THEN d.runs_batter ELSE 0 END) AS p1_runs,
+        -- Calculate Player 2 Runs (The player with the higher ID)
+        SUM(CASE WHEN d.batter_identifier = GREATEST(d.batter_identifier, d.non_striker_identifier) THEN d.runs_batter ELSE 0 END) AS p2_runs,
+        COUNT(CASE WHEN d.extras_wides = 0 AND d.extras_noballs = 0 THEN 1 END) AS legitimate_balls, -- This is the corrected logic for legitimate balls (excluding wides AND no-balls).
+        SUM(CASE WHEN d.runs_batter IN (4, 6) THEN 1 ELSE 0 END) AS boundary_count, -- Count 4s and 6s for context
+        COUNT(w.wicket_id) AS partnership_outs, -- Count broken partnerships for average calculation
+        COUNT(DISTINCT i.inning_id) AS innings_played -- Need this to calculate per-inning averages
       FROM Deliveries d
       JOIN Innings i ON d.inning_id = i.inning_id AND NOT i.is_super_over -- Do not consider super over stats, default case
       JOIN Matches m ON i.match_id = m.match_id
+      LEFT JOIN Wickets w ON d.delivery_id = w.delivery_id
       WHERE m.season_year = 2024
       GROUP BY
         LEAST(d.batter_identifier, d.non_striker_identifier),
@@ -86,10 +95,17 @@
         SUM(d.runs_batter) >= 300
     )
     SELECT
-      p1.first_last_name AS player1, # Use this field always to display the player names for the final output
-      p2.first_last_name AS player2, # Use this field always to display the player names for the final output
+      p1.first_last_name AS player1, -- Use this field always to display the player names for the final output
+      p2.first_last_name AS player2, -- Use this field always to display the player names for the final output
       ps.partnership_runs,
-      ROUND((ps.partnership_runs * 6.0 / NULLIF(ps.legitimate_balls, 0)), 2) AS run_rate
+      ps.innings_played, -- Enrichment: Added innings count
+      ROUND((ps.partnership_runs * 6.0 / NULLIF(ps.legitimate_balls, 0)), 2) AS run_rate,
+      -- Enrichment: Create a visual text representation of the contribution
+      (ps.p1_runs || ' (' || ROUND((ps.p1_runs::NUMERIC / ps.partnership_runs)*100, 0) || '%)' || 
+       ' vs ' || 
+       ps.p2_runs || ' (' || ROUND((ps.p2_runs::NUMERIC / ps.partnership_runs)*100, 0) || '%)') AS run_contribution_split,
+      ROUND(ps.boundary_count::NUMERIC / NULLIF(ps.innings_played, 0), 2) as avg_boundaries_per_inning, -- Enrichment: Calculated average boundaries/inning
+      ROUND((ps.partnership_runs::NUMERIC / NULLIF(ps.partnership_outs, 0)), 2) AS partnership_average -- Enrichment: Added average to provide deeper context
     FROM PartnershipStats ps
     JOIN Players p1 ON ps.player1_id = p1.identifier
     JOIN Players p2 ON ps.player2_id = p2.identifier
@@ -142,38 +158,60 @@
 - name: "Runs conceded by a bowler"
   question: "How many runs Josh Hazlewood conceded in IPL 2025?"
   sql: |
+    WITH TargetBowler AS MATERIALIZED (
+      -- Performance Optimization: Resolve the bowler ID exactly once in a CTE using MATERIALIZED to prevent inline loop
+      SELECT get_player_id_by_name('Josh Hazlewood') AS bowler_id
+    ),
+    BowlerStats AS (
     SELECT
-      SUM(d.runs_batter) + SUM(d.extras_wides) + SUM(d.extras_noballs) AS total_runs_conceded -- Only wides, noballs and runs scored by the batsman are tallied towards the bowler figures
+        p.first_last_name as player,
+        SUM(d.runs_batter) + SUM(d.extras_wides) + SUM(d.extras_noballs) AS total_runs_conceded, -- Standard definition of bowler runs. Only wides, noballs and runs scored by the batsman are tallied towards the bowler figures
+        COUNT(CASE WHEN d.extras_wides = 0 AND d.extras_noballs = 0 THEN 1 END) AS legal_balls, -- Count legal deliveries to calculate overs
+        COUNT(w.wicket_id) AS total_wickets, -- Enrichment: Wickets taken
+        COUNT(DISTINCT i.match_id) AS matches_played -- Enrichment: Games played
     FROM Deliveries AS d
-    JOIN Innings AS i
-      ON d.inning_id = i.inning_id AND NOT i.is_super_over
-    JOIN Matches AS m
-      ON i.match_id = m.match_id
-    WHERE
-      d.bowler_identifier = get_player_id_by_name('Josh Hazlewood') AND m.season_year = 2025;
+    JOIN TargetBowler tp ON d.bowler_identifier = tp.bowler_id -- Optimized Join: Matches against the static ID from the CTE
+    JOIN Innings AS i ON d.inning_id = i.inning_id AND NOT i.is_super_over
+    JOIN Matches AS m ON i.match_id = m.match_id
+    LEFT JOIN Wickets AS w ON d.delivery_id = w.delivery_id
+    JOIN Players p ON d.bowler_identifier = p.identifier
+    WHERE m.season_year = 2025
+    GROUP BY 1
+    )
+    SELECT
+        bs.player,
+        bs.matches_played,
+        bs.total_runs_conceded,
+        bs.total_wickets,
+        (bs.legal_balls / 6) || '.' || (bs.legal_balls % 6) AS overs_bowled, -- Enrichment: formatting balls into Overs (e.g. 4.2 overs)
+        ROUND((bs.total_runs_conceded * 6.0 / NULLIF(bs.legal_balls, 0)), 2) AS economy_rate -- Enrichment: Economy Rate calculation
+    FROM BowlerStats bs;
 
 - name: "Centuries example"
   question: "How many centuries Chris Gayle has scored in IPL?"
   sql: |
-    WITH Hundreds AS (
-    SELECT 
-    	inning_id,
-    	batter_identifier,
-    	SUM(runs_batter) AS runs
-    FROM Deliveries d
-    WHERE
-    	batter_identifier = (SELECT get_player_id_by_name('Chris Gayle'))
-    GROUP BY 
-    	inning_id,
-    	batter_identifier
-    HAVING SUM(runs_batter) >= 100
+    WITH TargetPlayer AS MATERIALIZED (
+      -- Performance Optimization: Resolve the player ID exactly once in a CTE using MATERIALIZED to prevent inline loop
+      SELECT get_player_id_by_name('Chris Gayle') AS player_id
+    ),
+    BattingStats AS (
+      SELECT 
+        p.first_last_name AS player,
+        d.inning_id,
+        SUM(d.runs_batter) AS runs
+      FROM Deliveries d
+      JOIN TargetPlayer tp ON d.batter_identifier = tp.player_id -- Optimized Join: Matches against the static ID from the CTE
+      JOIN Innings i ON d.inning_id = i.inning_id AND NOT i.is_super_over -- Exclude Super Overs
+      JOIN Players p ON d.batter_identifier = p.identifier
+      GROUP BY 1, 2
     )
     SELECT 
-    	first_last_name AS player,
-    	COUNT(1) AS total_centuries
-    FROM Hundreds h
-    JOIN Players p ON h. batter_identifier = p.identifier
-    GROUP BY first_last_name
+      bs.player,
+      COUNT(CASE WHEN bs.runs >= 100 THEN 1 END) AS total_centuries,
+      COUNT(bs.inning_id) AS innings_played, -- Enrichment: Context for consistency
+      MAX(bs.runs) AS highest_score -- Enrichment: Best performance context
+    FROM BattingStats bs
+    GROUP BY 1;
     
 - name: "Usage of time-frame based LIMIT"
   question: "What is the average first innings score in ipl season wise?"
@@ -200,3 +238,35 @@
     ORDER BY
       m.season_year DESC
     LIMIT 100; -- max limit, because the user is asking for a particular subset of data that is "every season")
+
+- name: "Head-to-Head (Batter vs Bowler) Example"
+  question: "Who has the highest strike rate against Jasprit Bumrah? (min 30 balls faced)"
+  sql: |
+    WITH TargetBowler AS MATERIALIZED (
+      -- Performance Optimization: Resolve the bowler ID exactly once in a CTE using MATERIALIZED to prevent inline loop
+      SELECT get_player_id_by_name('Jasprit Bumrah') AS bowler_id
+    )
+    SELECT
+      p_bat.first_last_name AS batter_name,
+      SUM(d.runs_batter) AS runs_scored,
+      COUNT(*) AS balls_faced, -- Enrichment: Context for the strike rate
+      COUNT(w.wicket_id) AS times_dismissed, -- Enrichment: Context showing how often the bowler wins
+      ROUND((SUM(d.runs_batter) * 100.0 / NULLIF(COUNT(*), 0)), 2) AS strike_rate,
+      ROUND((SUM(d.runs_batter)::NUMERIC / NULLIF(COUNT(w.wicket_id), 0)), 2) AS batting_average, -- Enrichment: Average specifically against this bowler
+      -- Enrichment: Boundary Counts (Dominance)
+      SUM(CASE WHEN d.runs_batter = 4 THEN 1 ELSE 0 END) AS fours,
+      SUM(CASE WHEN d.runs_batter = 6 THEN 1 ELSE 0 END) AS sixes,
+      -- Enrichment: Dot Ball Percentage (Pressure) - Percentage of balls where 0 runs were scored
+      ROUND((SUM(CASE WHEN d.runs_batter = 0 THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0)), 2) AS dot_ball_pct,
+      MODE() WITHIN GROUP (ORDER BY w.kind) AS common_dismissal_type -- Enrichment: Finds the most frequent dismissal method (e.g., 'lbw', 'caught')
+    FROM Deliveries AS d
+    JOIN TargetBowler tp ON d.bowler_identifier = tp.bowler_id -- Optimized Join: Matches against the static ID from the CTE
+    JOIN Players AS p_bat ON d.batter_identifier = p_bat.identifier
+    LEFT JOIN Wickets AS w ON d.delivery_id = w.delivery_id -- Join wickets to count dismissals by this bowler
+    GROUP BY
+      p_bat.first_last_name
+    HAVING
+      COUNT(*) >= 30 -- Apply the user's threshold to filter out small sample sizes
+    ORDER BY
+      strike_rate DESC
+    LIMIT 10; -- default limit
