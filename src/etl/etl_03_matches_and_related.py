@@ -62,24 +62,26 @@ def load_matches_and_related(team_id_cache, venue_id_cache, player_name_to_ident
                 team1_name = teams_in_match[0] if len(teams_in_match) > 0 else None
                 team2_name = teams_in_match[1] if len(teams_in_match) > 1 else None
 
-                # *** FIX for season year format ***
+                # Parse season year
                 season_raw = info.get('season')
                 season_year_to_insert = None
-                if len(info.get('dates', [None])) > 1 and season_raw:
-                    season_str = str(season_raw)
+                
+                if season_raw:
                     try:
-                        # Take the first four characters, which represent the starting year
+                        # Handle both "2023" and "2023/24" formats
+                        season_str = str(season_raw)
                         season_year_to_insert = int(season_str[:4])
-                    except (ValueError, TypeError):
-                        logger.error(f"Could not parse season '{season_str}' for match {match_file_id}.")
-                        # This will cause the INSERT to fail if season_year column is NOT NULL, which is intended.
-                else:
+                    except (ValueError, TypeError) as e:
+                        logger.warning(f"Could not parse season '{season_raw}' for match {match_file_id}: {e}")
+                
+                # Fallback to match date if season parsing failed
+                if not season_year_to_insert:
                     match_date_str = info.get('dates', [None])[0]
-                    try:
-                        season_year_to_insert = int(match_date_str[:4])
-                    except (ValueError, TypeError):
-                        logger.error(f"Could not parse season '{season_str}' for match {match_file_id}.")
-                # *** End of fix ***
+                    if match_date_str:
+                        try:
+                            season_year_to_insert = int(match_date_str[:4])
+                        except (ValueError, TypeError) as e:
+                            logger.error(f"Could not parse date '{match_date_str}' for match {match_file_id}: {e}")
 
                 team1_id = team_id_cache.get(team1_name)
                 team2_id = team_id_cache.get(team2_name)

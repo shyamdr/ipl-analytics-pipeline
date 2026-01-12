@@ -109,21 +109,40 @@ def clean_generated_sql(raw_sql: str) -> str:
     return cleaned_sql.strip()
 
 
-# Replace with this function
 def is_safe_query(sql_query: str) -> bool:
-    """A safety check to ensure only SELECT statements are executed."""
+    """Enhanced safety check to ensure only SELECT statements are executed."""
+    if not sql_query or not sql_query.strip():
+        return False
+    
     query_lower = sql_query.strip().lower()
-    # Rule 1: Must be a read-only query
+    
+    # Rule 1: Must start with SELECT or WITH (for CTEs)
     if not (query_lower.startswith("select") or query_lower.startswith("with")):
+        logger.warning(f"Query rejected: Must start with SELECT or WITH")
         return False
-    # Rule 2: Must not contain any dangerous or data-modifying keywords
-    dangerous_keywords = ["drop", "delete", "insert", "update", "truncate", "grant", "revoke"]
+    
+    # Rule 2: Block dangerous keywords (data modification)
+    dangerous_keywords = [
+        "drop", "delete", "insert", "update", "truncate", 
+        "alter", "create", "grant", "revoke", "exec", "execute",
+        "pg_sleep", "waitfor", "dbms_lock"  # Time-based attacks
+    ]
     for keyword in dangerous_keywords:
-        if keyword in query_lower:
+        # Use word boundaries to avoid false positives (e.g., "dropped" in column name)
+        if f" {keyword} " in f" {query_lower} " or query_lower.endswith(f" {keyword}"):
+            logger.warning(f"Query rejected: Contains dangerous keyword '{keyword}'")
             return False
-    # Rule 3: Ensure no query chaining is attempted (check for semicolon in middle)
+    
+    # Rule 3: Block query chaining (multiple statements)
     if ';' in query_lower.rstrip(';'):
+        logger.warning("Query rejected: Multiple statements detected")
         return False
+    
+    # Rule 4: Block comment-based injection attempts
+    if '--' in sql_query or '/*' in sql_query or '*/' in sql_query:
+        logger.warning("Query rejected: SQL comments detected")
+        return False
+    
     return True
 
 
