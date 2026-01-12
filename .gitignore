@@ -17,8 +17,6 @@ dist/
 data/raw_json_cricsheet/
 /_archive_dashboard/
 
-# Configuration file
-src/config.py
 
 # IDE and Editor Folders
 .idea/

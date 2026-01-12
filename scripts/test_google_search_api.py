@@ -16,19 +16,20 @@ def google_search(search_term, api_key, cse_id, **kwargs):
 
 def main():
     load_dotenv()
-    api_key = os.getenv("GOOGLE_SEARCH_API_KEY2")
+    api_key = os.getenv("GOOGLE_SEARCH_API_KEY")
     cse_key = os.getenv("GOOGLE_SEARCH_ENGINE_ID")
     if not api_key:
         print("ERROR: GOOGLE_SEARCH_API_KEY not found. Please set it in your .env file.")
         return
     elif not cse_key:
         print("ERROR: GOOGLE_SEARCH_ENGINE_ID not found. Please set it in your .env file.")
+        return
 
     query = "ESPNCRICINFO 28763"
 
     try:
         # Perform search for top 10 results
-        results = google_search(query, API_KEY, CSE_ID, num=5)
+        results = google_search(query, api_key, cse_key, num=5)
         # Print results
         for i, result in enumerate(results, 1):
             print(f"{i}. {result['title']}")
