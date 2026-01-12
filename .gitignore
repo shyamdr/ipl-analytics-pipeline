@@ -11,7 +11,7 @@ __pycache__/
 *$py.class
 
 # Output directories
-logs/
+logs/*.log
 build/
 dist/
 data/raw_json_cricsheet/
@@ -27,4 +27,4 @@ data/raw_json_cricsheet/
 
 # Other files
 tests/ai_comparison_against_cricinfo.yaml
-/backups/*.dump
+backups/
