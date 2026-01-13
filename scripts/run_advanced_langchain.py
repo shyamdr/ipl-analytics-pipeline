@@ -1,5 +1,6 @@
 # scripts/run_advanced_langchain.py
 import os
+import threading
 
 import psycopg2
 import yaml
@@ -29,7 +30,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-_global_llm_cache = {}
+# Thread-safe singleton for LLM cache
+_llm_cache_lock = threading.Lock()
+_llm_cache: dict = {}
 
 
 # --- Helper Functions ---
@@ -244,23 +247,29 @@ def summarize_results_with_ai(user_question: str, db_results: list, headers: lis
 
 
 def run_advanced_langchain_tool(user_question: str) -> tuple[str, list, list, bool]:
-    if not _global_llm_cache:
-        load_dotenv()
-        api_key = os.getenv("GOOGLE_API_KEY")
-        if not api_key:
-            logger.error("ERROR: GOOGLE_API_KEY not found. Please set it in your .env file.")
-            return "API key not found.", [], [], False
+    with _llm_cache_lock:
+        if not _llm_cache:
+            load_dotenv()
+            api_key = os.getenv("GOOGLE_API_KEY")
+            if not api_key:
+                logger.error("ERROR: GOOGLE_API_KEY not found. Please set it in your .env file.")
+                return "API key not found.", [], [], False
 
-        try:
-            genai.configure(api_key=api_key)
-            logger.info("Gemini API configured successfully.")
-            _global_llm_cache['llm'] = genai.GenerativeModel('gemini-2.5-flash')
-        except Exception as e:
-            logger.error(f"Error configuring API: {e}")
-            return f"API Configuration failed: {e}", [], [], False
+            try:
+                genai.configure(api_key=api_key)
+                logger.info("Gemini API configured successfully.")
+                _llm_cache['llm'] = genai.GenerativeModel('gemini-2.5-flash')
+            except Exception as e:
+                logger.error(f"Error configuring API: {e}")
+                return f"API Configuration failed: {e}", [], [], False
 
-    llm_model = _global_llm_cache['llm']
+        llm_model = _llm_cache['llm']
 
+    # Validate database credentials before building connection string
+    if not config.DB_PASSWORD:
+        logger.error("ERROR: DB_PASSWORD not found in configuration.")
+        return "Database configuration error.", [], [], False
+    
     db_uri = f"postgresql+psycopg2://{config.DB_USER}:{config.DB_PASSWORD}@{config.DB_HOST}:{config.DB_PORT}/{config.DB_NAME}"
     db = SQLDatabase.from_uri(db_uri, ignore_tables = ['people', 'stg_match_data', 'officials'])
     db_schema = db.get_table_info()

@@ -3,6 +3,13 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 
+# Chart Configuration Constants
+DEFAULT_TOP_N_ITEMS = 12
+DEFAULT_HISTOGRAM_BINS = 30
+DEFAULT_MAX_ROWS = 100
+DEFAULT_CHART_TEMPLATE = "plotly_dark"
+DEFAULT_CHART_TEMPLATE_LIGHT = "plotly_white"
+
 def initialize_session_state():
     """Initializes session state variables if they don't exist."""
     defaults = {
@@ -49,7 +56,7 @@ def initialize_session_state():
         # --- Histogram ---
         'config_x_col_hist': None,
         'config_color_col_hist': None,
-        'config_nbins_hist': 30,  # Default to 30 bins
+        'config_nbins_hist': DEFAULT_HISTOGRAM_BINS,  # Default histogram bins
         'config_barmode_hist': 'overlay',  # Default to overlay
         'config_hist_type': 'Histogram',
         # --- Box Plot ---
@@ -232,20 +239,101 @@ def build_chart_studio(df):
     elif st.session_state.chart_type == 'Sankey Diagram':
         create_sankey_diagram_from_state(df_processed)
 
-def process_data(df):
+def _apply_filters(df: pd.DataFrame, active_filters: dict) -> pd.DataFrame:
+    """Apply active filters to the dataframe."""
+    df_filtered = df.copy()
+    for col, val in active_filters.items():
+        if col in df_filtered.columns:
+            if df_filtered[col].dtype == 'object':
+                df_filtered = df_filtered[df_filtered[col].isin(val)]
+            else:
+                df_filtered = df_filtered[df_filtered[col].between(val[0], val[1])]
+    return df_filtered
+
+
+def _get_chart_columns(active_chart: str) -> tuple[list, list, str]:
+    """Get value columns, axis columns, and color column for the active chart."""
+    value_cols = []
+    axis_cols = []
+    color_col = None
+
+    if active_chart == 'Bar Chart':
+        value_cols = st.session_state.get('config_value_cols', [])
+        axis_cols = [st.session_state.get('config_category_col')]
+        color_col = st.session_state.get('config_color_col')
+    elif active_chart == 'Line Chart':
+        value_cols = st.session_state.get('config_y_cols_line', [])
+        axis_cols = [st.session_state.get('config_x_col_line')]
+        color_col = st.session_state.get('config_color_col_line')
+    elif active_chart == 'Nightingale Rose Chart':
+        value_cols = [st.session_state.get('config_r_nightingale')]
+        axis_cols = [st.session_state.get('config_theta_nightingale')]
+    elif active_chart == 'Scatter Plot':
+        value_cols = [
+            st.session_state.get('config_x_col_scatter'),
+            st.session_state.get('config_y_col_scatter'),
+            st.session_state.get('config_size_col_scatter')
+        ]
+        axis_cols = [st.session_state.get('config_color_col_scatter')]
+    elif active_chart == 'Box Plot':
+        value_cols = [st.session_state.get('config_y_col_box')]
+        axis_cols = [
+            st.session_state.get('config_x_col_box'),
+            st.session_state.get('config_color_col_box')
+        ]
+    elif active_chart == 'Heatmap':
+        value_cols = [st.session_state.get('config_z_col_heat')]
+        axis_cols = [
+            st.session_state.get('config_x_col_heat'),
+            st.session_state.get('config_y_col_heat')
+        ]
+
+    # Filter out None values
+    axis_cols = [col for col in axis_cols if col]
+    value_cols = [col for col in value_cols if col]
+    
+    return value_cols, axis_cols, color_col
+
+
+def _apply_aggregation(df: pd.DataFrame, group_by_cols: list, value_cols: list, 
+                       axis_cols: list, color_col: str, active_chart: str) -> pd.DataFrame:
+    """Apply aggregation to the dataframe based on group by columns."""
+    if not value_cols:
+        st.warning("Please select a numeric 'Value' column in the 'Configure Chart' tab before summarizing.")
+        return df
+
+    if color_col:
+        axis_cols.append(color_col)
+
+    try:
+        # Build the aggregation dictionary
+        agg_functions = {}
+        for col in value_cols:
+            agg_func = st.session_state.get(f"agg_{active_chart}_{col}", 'sum').lower()
+            agg_functions[col] = agg_func
+
+        for col in axis_cols:
+            if col not in group_by_cols and col not in agg_functions:
+                agg_functions[col] = 'first'
+
+        cols_to_process = group_by_cols + list(agg_functions.keys())
+        cols_to_process = [c for c in list(dict.fromkeys(cols_to_process)) if c in df.columns]
+
+        df_aggregated = df[cols_to_process].groupby(group_by_cols).agg(agg_functions).reset_index()
+        st.info(f"Data has been summarized by '{', '.join(group_by_cols)}'.")
+        return df_aggregated
+
+    except Exception as e:
+        st.error(f"Failed to group data. Error: {e}")
+        return df
+
+
+def process_data(df: pd.DataFrame) -> pd.DataFrame:
     """
     Applies filtering and aggregation using chart-specific session state keys.
-    This version now preserves axis columns during aggregation.
     """
-    df_processed = df.copy()
-
     # 1. Apply active filters
-    for col, val in st.session_state.get('active_filters', {}).items():
-        if col in df_processed.columns:
-            if df_processed[col].dtype == 'object':
-                df_processed = df_processed[df_processed[col].isin(val)]
-            else:
-                df_processed = df_processed[df_processed[col].between(val[0], val[1])]
+    df_processed = _apply_filters(df, st.session_state.get('active_filters', {}))
 
     # 2. Apply summarization if toggled
     active_chart = st.session_state.chart_type
@@ -253,80 +341,10 @@ def process_data(df):
     groupby_key = f"{active_chart.lower().replace(' ', '_')}_group_by_cols"
 
     if st.session_state.get(toggle_key) and st.session_state.get(groupby_key):
-
         group_by_cols = st.session_state[groupby_key]
-
-        value_cols = []
-        axis_cols = []
-        color_col = None
-
-        if active_chart == 'Bar Chart':
-            value_cols = st.session_state.get('config_value_cols', [])
-            axis_cols = [st.session_state.get('config_category_col')]
-            color_col = st.session_state.get('config_color_col')
-        elif active_chart == 'Line Chart':
-            value_cols = st.session_state.get('config_y_cols_line', [])
-            axis_cols = [st.session_state.get('config_x_col_line')]
-            color_col = st.session_state.get('config_color_col_line')
-        elif active_chart == 'Nightingale Rose Chart':
-            value_cols = [st.session_state.get('config_r_nightingale')]
-            axis_cols = [st.session_state.get('config_theta_nightingale')]
-        elif active_chart == 'Scatter Plot':
-            # For a scatter plot, all axes (x, y, and size) can be numeric values that need aggregation
-            value_cols = [
-                st.session_state.get('config_x_col_scatter'),
-                st.session_state.get('config_y_col_scatter'),
-                st.session_state.get('config_size_col_scatter') # Add the size column
-            ]
-            # The color column is the categorical axis we need to preserve
-            axis_cols = [st.session_state.get('config_color_col_scatter')]
-        elif active_chart == 'Box Plot':
-            # The y-axis is the numeric value to aggregate
-            value_cols = [st.session_state.get('config_y_col_box')]
-            # The x-axis and color are the categorical axes to preserve
-            axis_cols = [
-                st.session_state.get('config_x_col_box'),
-                st.session_state.get('config_color_col_box')
-            ]
-        elif active_chart == 'Heatmap':
-            # The z-axis is the numeric value to aggregate
-            value_cols = [st.session_state.get('config_z_col_heat')]
-            # Both x and y axes are categorical and must be preserved
-            axis_cols = [
-                st.session_state.get('config_x_col_heat'),
-                st.session_state.get('config_y_col_heat')
-            ]
-
-        # Filter out None values
-        axis_cols = [col for col in axis_cols if col]
-        value_cols = [col for col in value_cols if col]
-
-        if not value_cols:
-            st.warning("Please select a numeric 'Value' column in the 'Configure Chart' tab before summarizing.")
-            return df_processed
-
-        if color_col:
-            axis_cols.append(color_col)
-
-        try:
-            # Build the aggregation dictionary
-            agg_functions = {}
-            for col in value_cols:
-                agg_func = st.session_state.get(f"agg_{active_chart}_{col}", 'sum').lower()
-                agg_functions[col] = agg_func
-
-            for col in axis_cols:
-                if col not in group_by_cols and col not in agg_functions:
-                    agg_functions[col] = 'first'
-
-            cols_to_process = group_by_cols + list(agg_functions.keys())
-            cols_to_process = [c for c in list(dict.fromkeys(cols_to_process)) if c in df_processed.columns]
-
-            df_processed = df_processed[cols_to_process].groupby(group_by_cols).agg(agg_functions).reset_index()
-            st.info(f"Data has been summarized by '{', '.join(group_by_cols)}'.")
-
-        except Exception as e:
-            st.error(f"Failed to group data. Error: {e}")
+        value_cols, axis_cols, color_col = _get_chart_columns(active_chart)
+        df_processed = _apply_aggregation(df_processed, group_by_cols, value_cols, 
+                                          axis_cols, color_col, active_chart)
 
     return df_processed
 
@@ -579,9 +597,9 @@ def create_donut_chart_from_state(df):
         st.info("Please configure the Labels and Values in the 'Configure Chart' tab.")
         return
     try:
-        df_top = df.nlargest(12, values_col)
+        df_top = df.nlargest(DEFAULT_TOP_N_ITEMS, values_col)
         fig = px.pie(df_top, names=names_col, values=values_col, hole=0.4,  # Default hole for donut
-                     template="plotly_dark", title=f"Distribution of {values_col} by {names_col}")
+                     template=DEFAULT_CHART_TEMPLATE, title=f"Distribution of {values_col} by {names_col}")
         fig.update_traces(textposition='inside', textinfo='percent+label',
                           pull=[0.05 if i == 0 else 0 for i in range(len(df_top))])
         st.plotly_chart(fig, width="stretch")

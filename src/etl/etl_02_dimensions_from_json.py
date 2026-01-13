@@ -12,10 +12,13 @@ team_id_cache = {}
 venue_id_cache = {}  # Key will be (venue_name, city_name) tuple
 
 
-def populate_teams_and_venues():
+def populate_teams_and_venues() -> tuple[dict[str, int], dict[tuple[str, str], int]]:
     """
     Scans stg_match_data to find unique teams and venues,
     populates Teams and Venues tables, and fills local caches.
+    
+    Returns:
+        tuple: (team_id_cache, venue_id_cache) or ({}, {}) on error
     """
     conn = None
     logger.info("Starting population of Teams and Venues tables...")
@@ -95,7 +98,7 @@ def populate_teams_and_venues():
         logger.error(f"Error populating dimension tables (Teams, Venues): {error}", exc_info=True)
         if conn:
             conn.rollback()
-        return {}, {}
+        raise  # Re-raise to let caller handle
     finally:
         if conn:
             if 'cursor' in locals() and cursor and not cursor.closed:

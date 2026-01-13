@@ -100,19 +100,29 @@ if clear_button:
     st.rerun()  # Clear and rerun the app to reset state
 
 if generate_button and user_query:
-    st.session_state['last_question'] = user_query
+    # Input validation
+    user_query_stripped = user_query.strip()
+    
+    if not user_query_stripped:
+        st.warning("Please enter a valid question.")
+    elif len(user_query_stripped) < 5:
+        st.warning("Your question is too short. Please provide more details.")
+    elif len(user_query_stripped) > 500:
+        st.warning("Your question is too long. Please keep it under 500 characters.")
+    else:
+        st.session_state['last_question'] = user_query_stripped
 
-    # Call the core AI logic
-    with st.spinner("Thinking... Generating query and fetching answer..."):
-        final_answer, results_data, results_headers, success_status = run_advanced_langchain_tool(user_query)
+        # Call the core AI logic
+        with st.spinner("Thinking... Generating query and fetching answer..."):
+            final_answer, results_data, results_headers, success_status = run_advanced_langchain_tool(user_query_stripped)
 
-    st.session_state['last_answer'] = final_answer
-    st.session_state['api_called_success'] = success_status
-    st.session_state['last_results_data'] = results_data
-    st.session_state['last_results_headers'] = results_headers
+        st.session_state['last_answer'] = final_answer
+        st.session_state['api_called_success'] = success_status
+        st.session_state['last_results_data'] = results_data
+        st.session_state['last_results_headers'] = results_headers
 
-    if not success_status:
-        st.error(st.session_state['last_answer'])  # Display the error message from the AI directly
+        if not success_status:
+            st.error(st.session_state['last_answer'])  # Display the error message from the AI directly
 
 # --- Display Results Section ---
 if st.session_state['api_called_success']:

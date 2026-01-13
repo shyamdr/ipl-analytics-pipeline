@@ -1,11 +1,12 @@
 # db_utils.py
 import psycopg2
+import psycopg2.extensions
 import logging
 from . import config
 
 logger = logging.getLogger(__name__)
 
-def get_db_connection():
+def get_db_connection() -> psycopg2.extensions.connection:
     """Establishes and returns a database connection."""
     try:
         conn = psycopg2.connect(
